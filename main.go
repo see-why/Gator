@@ -3,37 +3,77 @@ package main
 import (
 	"fmt"
 	"gator/internal/config"
-	"log"
+	"os"
 )
+
+// state holds application state, for now just the config
+type state struct {
+	cfg *config.Config
+}
+
+// command represents a CLI command and its arguments
+type command struct {
+	name string
+	args []string
+}
+
+// commands holds all registered CLI commands
+// The map is from command name to handler function
+// Handler signature: func(*state, command) error
+type commands struct {
+	handlers map[string]func(*state, command) error
+}
+
+func (c *commands) register(name string, f func(*state, command) error) {
+	c.handlers[name] = f
+}
+
+func (c *commands) run(s *state, cmd command) error {
+	handler, ok := c.handlers[cmd.name]
+	if !ok {
+		return fmt.Errorf("unknown command: %s", cmd.name)
+	}
+	return handler(s, cmd)
+}
+
+// handlerLogin sets the current user in the config file
+func handlerLogin(s *state, cmd command) error {
+	if len(cmd.args) < 1 {
+		return fmt.Errorf("login requires a username argument")
+	}
+	username := cmd.args[0]
+	err := s.cfg.SetUser(username)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("User set to '%s'\n", username)
+	return nil
+}
 
 func main() {
 	// Read the config file
 	cfg, err := config.Read()
 	if err != nil {
-		log.Fatalf("Error reading config: %v", err)
+		fmt.Fprintf(os.Stderr, "Error reading config: %v\n", err)
+		os.Exit(1)
 	}
 
-	fmt.Println("Initial config:")
-	fmt.Printf("DB URL: %s\n", cfg.DbURL)
-	fmt.Printf("Current User: %s\n", cfg.CurrentUserName)
-	fmt.Println()
+	appState := &state{cfg: &cfg}
+	cmds := &commands{handlers: make(map[string]func(*state, command) error)}
+	cmds.register("login", handlerLogin)
 
-	// Set the current user to "andi" and update the config file on disk
-	err = cfg.SetUser("andi")
+	if len(os.Args) < 2 {
+		fmt.Fprintln(os.Stderr, "Error: not enough arguments. Usage: gator <command> [args...]")
+		os.Exit(1)
+	}
+
+	cmdName := os.Args[1]
+	cmdArgs := os.Args[2:]
+	cmd := command{name: cmdName, args: cmdArgs}
+
+	err = cmds.run(appState, cmd)
 	if err != nil {
-		log.Fatalf("Error setting user: %v", err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n")
+		os.Exit(1)
 	}
-
-	fmt.Println("Updated user to 'andi'")
-	fmt.Println()
-
-	// Read the config file again and print the contents
-	cfg, err = config.Read()
-	if err != nil {
-		log.Fatalf("Error reading config after update: %v", err)
-	}
-
-	fmt.Println("Final config:")
-	fmt.Printf("DB URL: %s\n", cfg.DbURL)
-	fmt.Printf("Current User: %s\n", cfg.CurrentUserName)
 }
