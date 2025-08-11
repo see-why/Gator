@@ -48,7 +48,7 @@ func getConfigFilePath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	return filepath.Join(homeDir, configFileName), nil
 }
 
