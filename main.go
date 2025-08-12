@@ -96,6 +96,17 @@ func handlerRegister(s *state, cmd command) error {
 	return nil
 }
 
+// handlerReset deletes all users from the database
+func handlerReset(s *state, cmd command) error {
+	err := s.db.DeleteAllUsers(context.Background())
+	if err != nil {
+		return fmt.Errorf("couldn't reset users: %w", err)
+	}
+	
+	fmt.Println("Database has been reset successfully!")
+	return nil
+}
+
 func main() {
 	// Read the config file
 	cfg, err := config.Read()
@@ -121,6 +132,7 @@ func main() {
 	cmds := &commands{handlers: make(map[string]func(*state, command) error)}
 	cmds.register("login", handlerLogin)
 	cmds.register("register", handlerRegister)
+	cmds.register("reset", handlerReset)
 
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "Error: not enough arguments. Usage: gator <command> [args...]")
