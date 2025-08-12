@@ -107,6 +107,24 @@ func handlerReset(s *state, cmd command) error {
 	return nil
 }
 
+// handlerUsers lists all users from the database
+func handlerUsers(s *state, cmd command) error {
+	users, err := s.db.GetUsers(context.Background())
+	if err != nil {
+		return fmt.Errorf("couldn't retrieve users: %w", err)
+	}
+
+	for _, user := range users {
+		if user.Name == s.cfg.CurrentUserName {
+			fmt.Printf("* %s (current)\n", user.Name)
+		} else {
+			fmt.Printf("* %s\n", user.Name)
+		}
+	}
+
+	return nil
+}
+
 func main() {
 	// Read the config file
 	cfg, err := config.Read()
@@ -133,6 +151,7 @@ func main() {
 	cmds.register("login", handlerLogin)
 	cmds.register("register", handlerRegister)
 	cmds.register("reset", handlerReset)
+	cmds.register("users", handlerUsers)
 
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "Error: not enough arguments. Usage: gator <command> [args...]")
