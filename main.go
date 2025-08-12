@@ -1,13 +1,21 @@
 package main
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
 	"gator/internal/config"
+	"gator/internal/database"
 	"os"
+	"time"
+
+	"github.com/google/uuid"
+	_ "github.com/lib/pq"
 )
 
-// state holds application state, for now just the config
+// state holds application state
 type state struct {
+	db  *database.Queries
 	cfg *config.Config
 }
 
@@ -42,11 +50,49 @@ func handlerLogin(s *state, cmd command) error {
 		return fmt.Errorf("login requires a username argument")
 	}
 	username := cmd.args[0]
-	err := s.cfg.SetUser(username)
+	
+	// Check if user exists in database
+	_, err := s.db.GetUser(context.Background(), username)
+	if err != nil {
+		return fmt.Errorf("user '%s' not found", username)
+	}
+	
+	err = s.cfg.SetUser(username)
 	if err != nil {
 		return err
 	}
 	fmt.Printf("User set to '%s'\n", username)
+	return nil
+}
+
+// handlerRegister creates a new user in the database
+func handlerRegister(s *state, cmd command) error {
+	if len(cmd.args) < 1 {
+		return fmt.Errorf("register requires a username argument")
+	}
+	username := cmd.args[0]
+	
+	// Create new user in database
+	user, err := s.db.CreateUser(context.Background(), database.CreateUserParams{
+		ID:        uuid.New(),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+		Name:      username,
+	})
+	if err != nil {
+		return fmt.Errorf("couldn't create user: %w", err)
+	}
+	
+	// Set the current user in config
+	err = s.cfg.SetUser(username)
+	if err != nil {
+		return err
+	}
+	
+	fmt.Printf("User created successfully!\n")
+	fmt.Printf("ID: %s\n", user.ID)
+	fmt.Printf("Name: %s\n", user.Name)
+	fmt.Printf("Created: %s\n", user.CreatedAt)
 	return nil
 }
 
@@ -58,9 +104,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	appState := &state{cfg: &cfg}
+	// Open database connection
+	db, err := sql.Open("postgres", cfg.DbURL)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
+		os.Exit(1)
+	}
+	defer db.Close()
+
+	dbQueries := database.New(db)
+	appState := &state{
+		db:  dbQueries,
+		cfg: &cfg,
+	}
+
 	cmds := &commands{handlers: make(map[string]func(*state, command) error)}
 	cmds.register("login", handlerLogin)
+	cmds.register("register", handlerRegister)
 
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "Error: not enough arguments. Usage: gator <command> [args...]")
@@ -73,7 +133,7 @@ func main() {
 
 	err = cmds.run(appState, cmd)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n")
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
