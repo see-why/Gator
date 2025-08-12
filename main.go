@@ -50,13 +50,13 @@ func handlerLogin(s *state, cmd command) error {
 		return fmt.Errorf("login requires a username argument")
 	}
 	username := cmd.args[0]
-	
+
 	// Check if user exists in database
 	_, err := s.db.GetUser(context.Background(), username)
 	if err != nil {
 		return fmt.Errorf("user '%s' not found", username)
 	}
-	
+
 	err = s.cfg.SetUser(username)
 	if err != nil {
 		return err
@@ -71,7 +71,7 @@ func handlerRegister(s *state, cmd command) error {
 		return fmt.Errorf("register requires a username argument")
 	}
 	username := cmd.args[0]
-	
+
 	// Create new user in database
 	user, err := s.db.CreateUser(context.Background(), database.CreateUserParams{
 		ID:        uuid.New(),
@@ -82,13 +82,13 @@ func handlerRegister(s *state, cmd command) error {
 	if err != nil {
 		return fmt.Errorf("couldn't create user: %w", err)
 	}
-	
+
 	// Set the current user in config
 	err = s.cfg.SetUser(username)
 	if err != nil {
 		return err
 	}
-	
+
 	fmt.Printf("User created successfully!\n")
 	fmt.Printf("ID: %s\n", user.ID)
 	fmt.Printf("Name: %s\n", user.Name)
@@ -102,7 +102,7 @@ func handlerReset(s *state, cmd command) error {
 	if err != nil {
 		return fmt.Errorf("couldn't reset users: %w", err)
 	}
-	
+
 	fmt.Println("Database has been reset successfully!")
 	return nil
 }
