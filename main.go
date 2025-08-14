@@ -129,9 +129,9 @@ func handlerUsers(s *state, cmd command) error {
 
 // handlerAgg fetches a single feed and prints the entire struct to the console
 func handlerAgg(s *state, cmd command) error {
-	feedURL := os.Getenv("TEST_FEED_URL")
+	feedURL := os.Getenv("FEED_URL")
 	if feedURL == "" {
-		return fmt.Errorf("TEST_FEED_URL environment variable is not set")
+		return fmt.Errorf("FEED_URL environment variable is not set")
 	}
 
 	feed, err := rss.FetchFeed(context.Background(), feedURL)
