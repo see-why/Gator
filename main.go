@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"gator/internal/config"
 	"gator/internal/database"
+	"gator/internal/rss"
 	"os"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
 
@@ -125,7 +127,90 @@ func handlerUsers(s *state, cmd command) error {
 	return nil
 }
 
+// handlerAgg fetches a single feed and prints the entire struct to the console
+func handlerAgg(s *state, cmd command) error {
+	feedURL := os.Getenv("FEED_URL")
+	if feedURL == "" {
+		return fmt.Errorf("FEED_URL environment variable is not set")
+	}
+
+	// Create a reusable HTTP client with timeout configuration
+	client := rss.NewHTTPClient()
+
+	feed, err := rss.FetchFeed(context.Background(), client, feedURL)
+	if err != nil {
+		return fmt.Errorf("couldn't fetch feed: %w", err)
+	}
+
+	// Print the entire struct to the console
+	fmt.Printf("%+v\n", feed)
+	return nil
+}
+
+// handlerAddFeed creates a new feed for the current user
+func handlerAddFeed(s *state, cmd command) error {
+	if len(cmd.args) < 2 {
+		return fmt.Errorf("addfeed requires name and url arguments")
+	}
+	name := cmd.args[0]
+	url := cmd.args[1]
+
+	// Get the current user from the database
+	user, err := s.db.GetUser(context.Background(), s.cfg.CurrentUserName)
+	if err != nil {
+		return fmt.Errorf("couldn't get current user: %w", err)
+	}
+
+	// Create new feed in database
+	feed, err := s.db.CreateFeed(context.Background(), database.CreateFeedParams{
+		ID:        uuid.New(),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+		Name:      name,
+		Url:       url,
+		UserID:    user.ID,
+	})
+	if err != nil {
+		return fmt.Errorf("couldn't create feed: %w", err)
+	}
+
+	// Print the fields of the new feed record
+	fmt.Printf("Feed created successfully!\n")
+	fmt.Printf("ID: %s\n", feed.ID)
+	fmt.Printf("Name: %s\n", feed.Name)
+	fmt.Printf("URL: %s\n", feed.Url)
+	fmt.Printf("User ID: %s\n", feed.UserID)
+	fmt.Printf("Created: %s\n", feed.CreatedAt)
+	fmt.Printf("Updated: %s\n", feed.UpdatedAt)
+	return nil
+}
+
+// handlerFeeds lists all feeds in the database with their associated user names
+func handlerFeeds(s *state, cmd command) error {
+	feeds, err := s.db.GetFeedsWithUsers(context.Background())
+	if err != nil {
+		return fmt.Errorf("couldn't retrieve feeds: %w", err)
+	}
+
+	if len(feeds) == 0 {
+		fmt.Println("No feeds found in the database.")
+		return nil
+	}
+
+	for _, feed := range feeds {
+		fmt.Printf("* %s (%s) - %s\n", feed.Name, feed.UserName, feed.Url)
+	}
+
+	return nil
+}
+
 func main() {
+	// Load environment variables from .env file
+	if err := godotenv.Load(); err != nil {
+		// Don't exit if .env file doesn't exist, just log a warning
+		fmt.Fprintf(os.Stderr, "Warning: Could not load .env file: %v\n", err)
+	}
+
 	// Read the config file
 	cfg, err := config.Read()
 	if err != nil {
@@ -152,6 +237,9 @@ func main() {
 	cmds.register("register", handlerRegister)
 	cmds.register("reset", handlerReset)
 	cmds.register("users", handlerUsers)
+	cmds.register("agg", handlerAgg)
+	cmds.register("addfeed", handlerAddFeed)
+	cmds.register("feeds", handlerFeeds)
 
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "Error: not enough arguments. Usage: gator <command> [args...]")
