@@ -178,6 +178,25 @@ func handlerAddFeed(s *state, cmd command) error {
 	return nil
 }
 
+// handlerFeeds lists all feeds in the database with their associated user names
+func handlerFeeds(s *state, cmd command) error {
+	feeds, err := s.db.GetFeedsWithUsers(context.Background())
+	if err != nil {
+		return fmt.Errorf("couldn't retrieve feeds: %w", err)
+	}
+
+	if len(feeds) == 0 {
+		fmt.Println("No feeds found in the database.")
+		return nil
+	}
+
+	for _, feed := range feeds {
+		fmt.Printf("* %s (%s) - %s\n", feed.Name, feed.UserName, feed.Url)
+	}
+
+	return nil
+}
+
 func main() {
 	// Read the config file
 	cfg, err := config.Read()
@@ -207,6 +226,7 @@ func main() {
 	cmds.register("users", handlerUsers)
 	cmds.register("agg", handlerAgg)
 	cmds.register("addfeed", handlerAddFeed)
+	cmds.register("feeds", handlerFeeds)
 
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "Error: not enough arguments. Usage: gator <command> [args...]")
