@@ -3,13 +3,26 @@ package rss
 import (
 	"context"
 	"encoding/xml"
+	"fmt"
 	"html"
 	"io"
 	"net/http"
+	"time"
 )
+
+// NewHTTPClient creates a new HTTP client with proper timeout configuration
+func NewHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: 30 * time.Second,
+	}
+}
 
 // FetchFeed fetches a feed from the given URL and returns a filled-out RSSFeed struct
 func FetchFeed(ctx context.Context, client *http.Client, feedURL string) (*RSSFeed, error) {
+	// Validate that the client has a reasonable timeout
+	if client.Timeout == 0 {
+		return nil, fmt.Errorf("HTTP client must have a timeout configured")
+	}
 	// Create a new request with context
 	req, err := http.NewRequestWithContext(ctx, "GET", feedURL, nil)
 	if err != nil {
