@@ -9,7 +9,7 @@ import (
 )
 
 // FetchFeed fetches a feed from the given URL and returns a filled-out RSSFeed struct
-func FetchFeed(ctx context.Context, feedURL string) (*RSSFeed, error) {
+func FetchFeed(ctx context.Context, client *http.Client, feedURL string) (*RSSFeed, error) {
 	// Create a new request with context
 	req, err := http.NewRequestWithContext(ctx, "GET", feedURL, nil)
 	if err != nil {
@@ -19,8 +19,7 @@ func FetchFeed(ctx context.Context, feedURL string) (*RSSFeed, error) {
 	// Set User-Agent header to identify our program
 	req.Header.Set("User-Agent", "gator")
 
-	// Create HTTP client and make the request
-	client := &http.Client{}
+	// Make the request using the provided client
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
