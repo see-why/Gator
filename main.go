@@ -7,6 +7,7 @@ import (
 	"gator/internal/config"
 	"gator/internal/database"
 	"gator/internal/rss"
+	"net/http"
 	"os"
 	"time"
 
@@ -134,7 +135,12 @@ func handlerAgg(s *state, cmd command) error {
 		return fmt.Errorf("FEED_URL environment variable is not set")
 	}
 
-	feed, err := rss.FetchFeed(context.Background(), feedURL)
+	// Create a reusable HTTP client with timeout configuration
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+
+	feed, err := rss.FetchFeed(context.Background(), client, feedURL)
 	if err != nil {
 		return fmt.Errorf("couldn't fetch feed: %w", err)
 	}
