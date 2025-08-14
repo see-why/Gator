@@ -7,7 +7,6 @@ import (
 	"gator/internal/config"
 	"gator/internal/database"
 	"gator/internal/rss"
-	"net/http"
 	"os"
 	"time"
 
@@ -136,9 +135,7 @@ func handlerAgg(s *state, cmd command) error {
 	}
 
 	// Create a reusable HTTP client with timeout configuration
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
+	client := rss.NewHTTPClient()
 
 	feed, err := rss.FetchFeed(context.Background(), client, feedURL)
 	if err != nil {
