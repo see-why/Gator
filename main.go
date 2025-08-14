@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
 
@@ -128,7 +129,10 @@ func handlerUsers(s *state, cmd command) error {
 
 // handlerAgg fetches a single feed and prints the entire struct to the console
 func handlerAgg(s *state, cmd command) error {
-	feedURL := "https://www.wagslane.dev/index.xml"
+	feedURL := os.Getenv("TEST_FEED_URL")
+	if feedURL == "" {
+		return fmt.Errorf("TEST_FEED_URL environment variable is not set")
+	}
 
 	feed, err := rss.FetchFeed(context.Background(), feedURL)
 	if err != nil {
@@ -198,6 +202,12 @@ func handlerFeeds(s *state, cmd command) error {
 }
 
 func main() {
+	// Load environment variables from .env file
+	if err := godotenv.Load(); err != nil {
+		// Don't exit if .env file doesn't exist, just log a warning
+		fmt.Fprintf(os.Stderr, "Warning: Could not load .env file: %v\n", err)
+	}
+
 	// Read the config file
 	cfg, err := config.Read()
 	if err != nil {
