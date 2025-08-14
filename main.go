@@ -140,6 +140,44 @@ func handlerAgg(s *state, cmd command) error {
 	return nil
 }
 
+// handlerAddFeed creates a new feed for the current user
+func handlerAddFeed(s *state, cmd command) error {
+	if len(cmd.args) < 2 {
+		return fmt.Errorf("addfeed requires name and url arguments")
+	}
+	name := cmd.args[0]
+	url := cmd.args[1]
+
+	// Get the current user from the database
+	user, err := s.db.GetUser(context.Background(), s.cfg.CurrentUserName)
+	if err != nil {
+		return fmt.Errorf("couldn't get current user: %w", err)
+	}
+
+	// Create new feed in database
+	feed, err := s.db.CreateFeed(context.Background(), database.CreateFeedParams{
+		ID:        uuid.New(),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+		Name:      name,
+		Url:       url,
+		UserID:    user.ID,
+	})
+	if err != nil {
+		return fmt.Errorf("couldn't create feed: %w", err)
+	}
+
+	// Print the fields of the new feed record
+	fmt.Printf("Feed created successfully!\n")
+	fmt.Printf("ID: %s\n", feed.ID)
+	fmt.Printf("Name: %s\n", feed.Name)
+	fmt.Printf("URL: %s\n", feed.Url)
+	fmt.Printf("User ID: %s\n", feed.UserID)
+	fmt.Printf("Created: %s\n", feed.CreatedAt)
+	fmt.Printf("Updated: %s\n", feed.UpdatedAt)
+	return nil
+}
+
 func main() {
 	// Read the config file
 	cfg, err := config.Read()
@@ -168,6 +206,7 @@ func main() {
 	cmds.register("reset", handlerReset)
 	cmds.register("users", handlerUsers)
 	cmds.register("agg", handlerAgg)
+	cmds.register("addfeed", handlerAddFeed)
 
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "Error: not enough arguments. Usage: gator <command> [args...]")
