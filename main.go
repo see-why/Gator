@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"gator/internal/config"
 	"gator/internal/database"
+	"gator/internal/rss"
 	"os"
 	"time"
 
@@ -125,6 +126,20 @@ func handlerUsers(s *state, cmd command) error {
 	return nil
 }
 
+// handlerAgg fetches a single feed and prints the entire struct to the console
+func handlerAgg(s *state, cmd command) error {
+	feedURL := "https://www.wagslane.dev/index.xml"
+
+	feed, err := rss.FetchFeed(context.Background(), feedURL)
+	if err != nil {
+		return fmt.Errorf("couldn't fetch feed: %w", err)
+	}
+
+	// Print the entire struct to the console
+	fmt.Printf("%+v\n", feed)
+	return nil
+}
+
 func main() {
 	// Read the config file
 	cfg, err := config.Read()
@@ -152,6 +167,7 @@ func main() {
 	cmds.register("register", handlerRegister)
 	cmds.register("reset", handlerReset)
 	cmds.register("users", handlerUsers)
+	cmds.register("agg", handlerAgg)
 
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "Error: not enough arguments. Usage: gator <command> [args...]")
