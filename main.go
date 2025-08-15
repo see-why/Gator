@@ -174,6 +174,18 @@ func handlerAddFeed(s *state, cmd command) error {
 		return fmt.Errorf("couldn't create feed: %w", err)
 	}
 
+	// Automatically create a feed follow record for the current user
+	feedFollow, err := s.db.CreateFeedFollow(context.Background(), database.CreateFeedFollowParams{
+		ID:        uuid.New(),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+		UserID:    user.ID,
+		FeedID:    feed.ID,
+	})
+	if err != nil {
+		return fmt.Errorf("couldn't create feed follow: %w", err)
+	}
+
 	// Print the fields of the new feed record
 	fmt.Printf("Feed created successfully!\n")
 	fmt.Printf("ID: %s\n", feed.ID)
@@ -182,6 +194,7 @@ func handlerAddFeed(s *state, cmd command) error {
 	fmt.Printf("User ID: %s\n", feed.UserID)
 	fmt.Printf("Created: %s\n", feed.CreatedAt)
 	fmt.Printf("Updated: %s\n", feed.UpdatedAt)
+	fmt.Printf("Now following %s as %s\n", feedFollow.FeedName, feedFollow.UserName)
 	return nil
 }
 
@@ -199,6 +212,69 @@ func handlerFeeds(s *state, cmd command) error {
 
 	for _, feed := range feeds {
 		fmt.Printf("* %s (%s) - %s\n", feed.Name, feed.UserName, feed.Url)
+	}
+
+	return nil
+}
+
+// handlerFollow creates a new feed follow record for the current user
+func handlerFollow(s *state, cmd command) error {
+	if len(cmd.args) < 1 {
+		return fmt.Errorf("follow requires a url argument")
+	}
+	url := cmd.args[0]
+
+	// Get the current user from the database
+	user, err := s.db.GetUser(context.Background(), s.cfg.CurrentUserName)
+	if err != nil {
+		return fmt.Errorf("couldn't get current user: %w", err)
+	}
+
+	// Look up the feed by URL
+	feed, err := s.db.GetFeedByURL(context.Background(), url)
+	if err != nil {
+		return fmt.Errorf("feed not found with URL: %s", url)
+	}
+
+	// Create new feed follow record
+	feedFollow, err := s.db.CreateFeedFollow(context.Background(), database.CreateFeedFollowParams{
+		ID:        uuid.New(),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+		UserID:    user.ID,
+		FeedID:    feed.ID,
+	})
+	if err != nil {
+		return fmt.Errorf("couldn't create feed follow: %w", err)
+	}
+
+	// Print the feed name and current user
+	fmt.Printf("Now following %s as %s\n", feedFollow.FeedName, feedFollow.UserName)
+	return nil
+}
+
+// handlerFollowing lists all feeds the current user is following
+func handlerFollowing(s *state, cmd command) error {
+	// Get the current user from the database
+	user, err := s.db.GetUser(context.Background(), s.cfg.CurrentUserName)
+	if err != nil {
+		return fmt.Errorf("couldn't get current user: %w", err)
+	}
+
+	// Get all feed follows for the user
+	feedFollows, err := s.db.GetFeedFollowsForUser(context.Background(), user.ID)
+	if err != nil {
+		return fmt.Errorf("couldn't retrieve feed follows: %w", err)
+	}
+
+	if len(feedFollows) == 0 {
+		fmt.Printf("You're not following any feeds yet.\n")
+		return nil
+	}
+
+	fmt.Printf("You're following %d feeds:\n", len(feedFollows))
+	for _, follow := range feedFollows {
+		fmt.Printf("* %s\n", follow.FeedName)
 	}
 
 	return nil
@@ -240,6 +316,8 @@ func main() {
 	cmds.register("agg", handlerAgg)
 	cmds.register("addfeed", handlerAddFeed)
 	cmds.register("feeds", handlerFeeds)
+	cmds.register("follow", handlerFollow)
+	cmds.register("following", handlerFollowing)
 
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "Error: not enough arguments. Usage: gator <command> [args...]")
