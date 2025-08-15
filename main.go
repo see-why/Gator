@@ -34,6 +34,21 @@ type commands struct {
 	handlers map[string]func(*state, command) error
 }
 
+// middlewareLoggedIn is a higher-order function that wraps handlers requiring authentication
+// It takes a handler that expects a user and returns a handler that can be registered
+func middlewareLoggedIn(handler func(s *state, cmd command, user database.User) error) func(*state, command) error {
+	return func(s *state, cmd command) error {
+		// Get the current user from the database
+		user, err := s.db.GetUser(context.Background(), s.cfg.CurrentUserName)
+		if err != nil {
+			return fmt.Errorf("couldn't get current user: %w", err)
+		}
+
+		// Call the original handler with the user
+		return handler(s, cmd, user)
+	}
+}
+
 func (c *commands) register(name string, f func(*state, command) error) {
 	c.handlers[name] = f
 }
@@ -148,18 +163,12 @@ func handlerAgg(s *state, cmd command) error {
 }
 
 // handlerAddFeed creates a new feed for the current user
-func handlerAddFeed(s *state, cmd command) error {
+func handlerAddFeed(s *state, cmd command, user database.User) error {
 	if len(cmd.args) < 2 {
 		return fmt.Errorf("addfeed requires name and url arguments")
 	}
 	name := cmd.args[0]
 	url := cmd.args[1]
-
-	// Get the current user from the database
-	user, err := s.db.GetUser(context.Background(), s.cfg.CurrentUserName)
-	if err != nil {
-		return fmt.Errorf("couldn't get current user: %w", err)
-	}
 
 	// Create new feed in database
 	feed, err := s.db.CreateFeed(context.Background(), database.CreateFeedParams{
@@ -218,17 +227,11 @@ func handlerFeeds(s *state, cmd command) error {
 }
 
 // handlerFollow creates a new feed follow record for the current user
-func handlerFollow(s *state, cmd command) error {
+func handlerFollow(s *state, cmd command, user database.User) error {
 	if len(cmd.args) < 1 {
 		return fmt.Errorf("follow requires a url argument")
 	}
 	url := cmd.args[0]
-
-	// Get the current user from the database
-	user, err := s.db.GetUser(context.Background(), s.cfg.CurrentUserName)
-	if err != nil {
-		return fmt.Errorf("couldn't get current user: %w", err)
-	}
 
 	// Look up the feed by URL
 	feed, err := s.db.GetFeedByURL(context.Background(), url)
@@ -254,13 +257,7 @@ func handlerFollow(s *state, cmd command) error {
 }
 
 // handlerFollowing lists all feeds the current user is following
-func handlerFollowing(s *state, cmd command) error {
-	// Get the current user from the database
-	user, err := s.db.GetUser(context.Background(), s.cfg.CurrentUserName)
-	if err != nil {
-		return fmt.Errorf("couldn't get current user: %w", err)
-	}
-
+func handlerFollowing(s *state, cmd command, user database.User) error {
 	// Get all feed follows for the user
 	feedFollows, err := s.db.GetFeedFollowsForUser(context.Background(), user.ID)
 	if err != nil {
@@ -314,10 +311,10 @@ func main() {
 	cmds.register("reset", handlerReset)
 	cmds.register("users", handlerUsers)
 	cmds.register("agg", handlerAgg)
-	cmds.register("addfeed", handlerAddFeed)
+	cmds.register("addfeed", middlewareLoggedIn(handlerAddFeed))
 	cmds.register("feeds", handlerFeeds)
-	cmds.register("follow", handlerFollow)
-	cmds.register("following", handlerFollowing)
+	cmds.register("follow", middlewareLoggedIn(handlerFollow))
+	cmds.register("following", middlewareLoggedIn(handlerFollowing))
 
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "Error: not enough arguments. Usage: gator <command> [args...]")
