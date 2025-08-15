@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"gator/internal/config"
 	"gator/internal/database"
@@ -71,7 +72,7 @@ func handlerLogin(s *state, cmd command) error {
 	// Check if user exists in database
 	_, err := s.db.GetUser(context.Background(), username)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("user '%s' not found", username)
 		}
 		return fmt.Errorf("database error while looking up user '%s': %w", username, err)
@@ -239,7 +240,7 @@ func handlerFollow(s *state, cmd command, user database.User) error {
 	// Look up the feed by URL
 	feed, err := s.db.GetFeedByURL(context.Background(), url)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("feed not found with URL: %s", url)
 		}
 		return fmt.Errorf("database error while looking up feed with URL %s: %w", url, err)
