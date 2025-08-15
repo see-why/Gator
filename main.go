@@ -71,7 +71,10 @@ func handlerLogin(s *state, cmd command) error {
 	// Check if user exists in database
 	_, err := s.db.GetUser(context.Background(), username)
 	if err != nil {
-		return fmt.Errorf("user '%s' not found", username)
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("user '%s' not found", username)
+		}
+		return fmt.Errorf("database error while looking up user '%s': %w", username, err)
 	}
 
 	err = s.cfg.SetUser(username)
@@ -236,7 +239,10 @@ func handlerFollow(s *state, cmd command, user database.User) error {
 	// Look up the feed by URL
 	feed, err := s.db.GetFeedByURL(context.Background(), url)
 	if err != nil {
-		return fmt.Errorf("feed not found with URL: %s", url)
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("feed not found with URL: %s", url)
+		}
+		return fmt.Errorf("database error while looking up feed with URL %s: %w", url, err)
 	}
 
 	// Create new feed follow record
