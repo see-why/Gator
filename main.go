@@ -284,6 +284,30 @@ func handlerFollowing(s *state, cmd command, user database.User) error {
 	return nil
 }
 
+// handlerUnfollow removes a feed follow record for the current user
+func handlerUnfollow(s *state, cmd command, user database.User) error {
+	if len(cmd.args) < 1 {
+		return fmt.Errorf("unfollow requires a url argument")
+	}
+	url := cmd.args[0]
+
+	// Delete the feed follow record
+	rowsAffected, err := s.db.DeleteFeedFollowByUserAndFeedURL(context.Background(), database.DeleteFeedFollowByUserAndFeedURLParams{
+		UserID: user.ID,
+		Url:    url,
+	})
+	if err != nil {
+		return fmt.Errorf("couldn't unfollow feed: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("you're not following a feed with URL: %s", url)
+	}
+
+	fmt.Printf("Successfully unfollowed feed: %s\n", url)
+	return nil
+}
+
 func main() {
 	// Load environment variables from .env file
 	if err := godotenv.Load(); err != nil {
@@ -322,6 +346,7 @@ func main() {
 	cmds.register("feeds", handlerFeeds)
 	cmds.register("follow", middlewareLoggedIn(handlerFollow))
 	cmds.register("following", middlewareLoggedIn(handlerFollowing))
+	cmds.register("unfollow", middlewareLoggedIn(handlerUnfollow))
 
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "Error: not enough arguments. Usage: gator <command> [args...]")
