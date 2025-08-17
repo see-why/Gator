@@ -208,6 +208,21 @@ func handlerAddFeed(s *state, cmd command, user database.User) error {
 	fmt.Printf("Created: %s\n", feed.CreatedAt)
 	fmt.Printf("Updated: %s\n", feed.UpdatedAt)
 	fmt.Printf("Now following %s as %s\n", feedFollow.FeedName, feedFollow.UserName)
+
+	// Fetch and save posts from the feed
+	fmt.Printf("Fetching posts from %s...\n", feed.Name)
+	client := rss.NewHTTPClient()
+	rssFeed, err := rss.FetchFeed(context.Background(), client, url)
+	if err != nil {
+		return fmt.Errorf("couldn't fetch RSS feed: %w", err)
+	}
+
+	err = rss.SavePostsToDatabase(context.Background(), s.db, rssFeed, feed.ID)
+	if err != nil {
+		return fmt.Errorf("couldn't save posts to database: %w", err)
+	}
+
+	fmt.Printf("Successfully processed %d posts from %s\n", len(rssFeed.Channel.Items), feed.Name)
 	return nil
 }
 
@@ -308,6 +323,53 @@ func handlerUnfollow(s *state, cmd command, user database.User) error {
 	return nil
 }
 
+// handlerBrowse displays posts for the current user
+func handlerBrowse(s *state, cmd command, user database.User) error {
+	limit := int32(2) // default limit
+
+	if len(cmd.args) >= 1 {
+		// Try to parse the limit argument
+		if parsedLimit, err := fmt.Sscanf(cmd.args[0], "%d", &limit); err != nil || parsedLimit != 1 {
+			return fmt.Errorf("limit must be a number, got: %s", cmd.args[0])
+		}
+	}
+
+	// Get posts for the user
+	posts, err := s.db.GetPostsForUser(context.Background(), database.GetPostsForUserParams{
+		UserID: user.ID,
+		Limit:  limit,
+	})
+	if err != nil {
+		return fmt.Errorf("couldn't retrieve posts: %w", err)
+	}
+
+	if len(posts) == 0 {
+		fmt.Printf("No posts found. Try following some feeds first!\n")
+		return nil
+	}
+
+	fmt.Printf("Latest posts (showing %d):\n\n", len(posts))
+	for i, post := range posts {
+		fmt.Printf("%d. %s\n", i+1, post.Title)
+		fmt.Printf("   Feed: %s\n", post.FeedName)
+		if post.Description.Valid && post.Description.String != "" {
+			// Truncate description if it's too long
+			desc := post.Description.String
+			if len(desc) > 200 {
+				desc = desc[:200] + "..."
+			}
+			fmt.Printf("   %s\n", desc)
+		}
+		if post.PublishedAt.Valid {
+			fmt.Printf("   Published: %s\n", post.PublishedAt.Time.Format("2006-01-02 15:04:05"))
+		}
+		fmt.Printf("   URL: %s\n", post.Url)
+		fmt.Println()
+	}
+
+	return nil
+}
+
 func main() {
 	// Load environment variables from .env file
 	if err := godotenv.Load(); err != nil {
@@ -347,6 +409,7 @@ func main() {
 	cmds.register("follow", middlewareLoggedIn(handlerFollow))
 	cmds.register("following", middlewareLoggedIn(handlerFollowing))
 	cmds.register("unfollow", middlewareLoggedIn(handlerUnfollow))
+	cmds.register("browse", middlewareLoggedIn(handlerBrowse))
 
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "Error: not enough arguments. Usage: gator <command> [args...]")

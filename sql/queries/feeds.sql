@@ -63,3 +63,27 @@ ORDER BY ff.created_at DESC;
 DELETE FROM feed_follows 
 WHERE feed_follows.user_id = $1 
 AND feed_follows.feed_id = (SELECT id FROM feeds WHERE url = $2);
+
+-- name: CreatePost :one
+INSERT INTO posts (id, created_at, updated_at, title, url, description, published_at, feed_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+ON CONFLICT (url) DO NOTHING
+RETURNING *;
+
+-- name: GetPostsForUser :many
+SELECT 
+    p.id,
+    p.created_at,
+    p.updated_at,
+    p.title,
+    p.url,
+    p.description,
+    p.published_at,
+    p.feed_id,
+    f.name as feed_name
+FROM posts p
+JOIN feeds f ON p.feed_id = f.id
+JOIN feed_follows ff ON f.id = ff.feed_id
+WHERE ff.user_id = $1
+ORDER BY p.published_at DESC NULLS LAST, p.created_at DESC
+LIMIT $2;
