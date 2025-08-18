@@ -323,34 +323,56 @@ func handlerUnfollow(s *state, cmd command, user database.User) error {
 	return nil
 }
 
-// handlerBrowse displays posts for the current user
+// handlerBrowse displays posts for the current user with pagination
 func handlerBrowse(s *state, cmd command, user database.User) error {
-	limit := int32(2) // default limit
+	const postsPerPage = 5 // Number of posts to show per page
+	page := int32(1)       // Default to page 1
 
 	if len(cmd.args) >= 1 {
-		// Try to parse the limit argument
-		if parsedLimit, err := fmt.Sscanf(cmd.args[0], "%d", &limit); err != nil || parsedLimit != 1 {
-			return fmt.Errorf("limit must be a number, got: %s", cmd.args[0])
+		// Try to parse the page argument
+		if parsedPage, err := fmt.Sscanf(cmd.args[0], "%d", &page); err != nil || parsedPage != 1 {
+			return fmt.Errorf("page must be a number, got: %s", cmd.args[0])
+		}
+		if page < 1 {
+			return fmt.Errorf("page must be 1 or greater, got: %d", page)
 		}
 	}
 
-	// Get posts for the user
+	// Calculate offset based on page number
+	offset := (page - 1) * postsPerPage
+
+	// Get posts for the user with pagination (query for one extra to check if more pages exist)
 	posts, err := s.db.GetPostsForUser(context.Background(), database.GetPostsForUserParams{
 		UserID: user.ID,
-		Limit:  limit,
+		Limit:  postsPerPage + 1, // Query for one extra post
+		Offset: offset,
 	})
 	if err != nil {
 		return fmt.Errorf("couldn't retrieve posts: %w", err)
 	}
 
+	// Check if there are more pages available
+	hasMorePages := len(posts) > int(postsPerPage)
+	
+	// If we got more than postsPerPage, trim the extra post
+	if hasMorePages {
+		posts = posts[:postsPerPage]
+	}
+
 	if len(posts) == 0 {
-		fmt.Printf("No posts found. Try following some feeds first!\n")
+		if page == 1 {
+			fmt.Printf("No posts found. Try following some feeds first!\n")
+		} else {
+			fmt.Printf("No posts found on page %d. Try a lower page number.\n", page)
+		}
 		return nil
 	}
 
-	fmt.Printf("Latest posts (showing %d):\n\n", len(posts))
+	fmt.Printf("Posts (page %d, showing %d posts):\n\n", page, len(posts))
 	for i, post := range posts {
-		fmt.Printf("%d. %s\n", i+1, post.Title)
+		// Calculate the overall post number based on page and position
+		postNumber := offset + int32(i) + 1
+		fmt.Printf("%d. %s\n", postNumber, post.Title)
 		fmt.Printf("   Feed: %s\n", post.FeedName)
 		if post.Description.Valid && post.Description.String != "" {
 			// Truncate description if it's too long
@@ -365,6 +387,14 @@ func handlerBrowse(s *state, cmd command, user database.User) error {
 		}
 		fmt.Printf("   URL: %s\n", post.Url)
 		fmt.Println()
+	}
+
+	// Show pagination info
+	if hasMorePages {
+		fmt.Printf("To see more posts, run: gator browse %d\n", page+1)
+	}
+	if page > 1 {
+		fmt.Printf("To see previous posts, run: gator browse %d\n", page-1)
 	}
 
 	return nil
