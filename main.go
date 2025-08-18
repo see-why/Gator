@@ -363,7 +363,7 @@ func handlerBrowse(s *state, cmd command, user database.User) error {
 	fmt.Printf("Posts (page %d, showing %d posts):\n\n", page, len(posts))
 	for i, post := range posts {
 		// Calculate the overall post number based on page and position
-		postNumber := int(offset) + i + 1
+		postNumber := offset + int32(i) + 1
 		fmt.Printf("%d. %s\n", postNumber, post.Title)
 		fmt.Printf("   Feed: %s\n", post.FeedName)
 		if post.Description.Valid && post.Description.String != "" {
