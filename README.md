@@ -138,6 +138,64 @@ gator reset
 
 Deletes all users from the database.
 
+#### Feed Management
+
+**Add a new RSS feed:**
+
+```bash
+gator addfeed <name> <url>
+```
+
+Creates a new feed and automatically follows it. Also fetches and saves recent posts.
+
+**List all feeds:**
+
+```bash
+gator feeds
+```
+
+Shows all feeds in the database with their creators and URLs.
+
+**Follow an existing feed:**
+
+```bash
+gator follow <url>
+```
+
+Start following an RSS feed that already exists in the database.
+
+**List followed feeds:**
+
+```bash
+gator following
+```
+
+Shows all feeds you're currently following.
+
+**Unfollow a feed:**
+
+```bash
+gator unfollow <url>
+```
+
+Stop following an RSS feed.
+
+#### Post Browsing
+
+**Browse posts with pagination:**
+
+```bash
+gator browse [page]
+```
+
+View posts from all followed feeds with pagination support. Shows 5 posts per page by default.
+
+- `gator browse` - Shows page 1 (most recent posts)
+- `gator browse 2` - Shows page 2 (older posts)
+- `gator browse 3` - Shows page 3 (even older posts)
+
+Posts are sorted by publication date (newest first) and numbered sequentially across pages. Navigation hints are provided to help you move between pages.
+
 ### Examples
 
 ```bash
