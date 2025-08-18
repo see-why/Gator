@@ -341,14 +341,22 @@ func handlerBrowse(s *state, cmd command, user database.User) error {
 	// Calculate offset based on page number
 	offset := (page - 1) * postsPerPage
 
-	// Get posts for the user with pagination
+	// Get posts for the user with pagination (query for one extra to check if more pages exist)
 	posts, err := s.db.GetPostsForUser(context.Background(), database.GetPostsForUserParams{
 		UserID: user.ID,
-		Limit:  postsPerPage,
+		Limit:  postsPerPage + 1, // Query for one extra post
 		Offset: offset,
 	})
 	if err != nil {
 		return fmt.Errorf("couldn't retrieve posts: %w", err)
+	}
+
+	// Check if there are more pages available
+	hasMorePages := len(posts) > int(postsPerPage)
+	
+	// If we got more than postsPerPage, trim the extra post
+	if hasMorePages {
+		posts = posts[:postsPerPage]
 	}
 
 	if len(posts) == 0 {
@@ -382,7 +390,7 @@ func handlerBrowse(s *state, cmd command, user database.User) error {
 	}
 
 	// Show pagination info
-	if len(posts) == int(postsPerPage) {
+	if hasMorePages {
 		fmt.Printf("To see more posts, run: gator browse %d\n", page+1)
 	}
 	if page > 1 {
