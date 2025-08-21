@@ -87,3 +87,27 @@ JOIN feed_follows ff ON f.id = ff.feed_id
 WHERE ff.user_id = $1
 ORDER BY p.published_at DESC NULLS LAST, p.created_at DESC
 LIMIT $2 OFFSET $3;
+
+-- name: SearchPostsForUser :many
+-- Search posts for a user by fuzzy match against title or description.
+-- Params: user_id uuid, q text (search term), limit int, offset int
+SELECT
+        p.id,
+        p.created_at,
+        p.updated_at,
+        p.title,
+        p.url,
+        p.description,
+        p.published_at,
+        p.feed_id,
+        f.name as feed_name
+FROM posts p
+JOIN feeds f ON p.feed_id = f.id
+JOIN feed_follows ff ON f.id = ff.feed_id
+WHERE ff.user_id = $1
+    AND (
+        p.title ILIKE ('%' || $2 || '%')
+        OR p.description ILIKE ('%' || $2 || '%')
+    )
+ORDER BY p.published_at DESC NULLS LAST, p.created_at DESC
+LIMIT $3 OFFSET $4;
