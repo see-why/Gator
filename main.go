@@ -400,6 +400,80 @@ func handlerBrowse(s *state, cmd command, user database.User) error {
 	return nil
 }
 
+// handlerSearch searches posts for the current user by a fuzzy term (title/description)
+func handlerSearch(s *state, cmd command, user database.User) error {
+	const postsPerPage = 5
+	if len(cmd.args) < 1 {
+		return fmt.Errorf("search requires a search term")
+	}
+
+	query := cmd.args[0]
+	page := int32(1)
+	if len(cmd.args) >= 2 {
+		if parsedPage, err := fmt.Sscanf(cmd.args[1], "%d", &page); err != nil || parsedPage != 1 {
+			return fmt.Errorf("page must be a number, got: %s", cmd.args[1])
+		}
+		if page < 1 {
+			return fmt.Errorf("page must be 1 or greater, got: %d", page)
+		}
+	}
+
+	offset := (page - 1) * postsPerPage
+
+	// Query for one extra to determine if more pages exist
+	posts, err := s.db.SearchPostsForUser(context.Background(), database.SearchPostsForUserParams{
+		UserID:  user.ID,
+		Column2: sql.NullString{String: query, Valid: true},
+		Limit:   postsPerPage + 1,
+		Offset:  offset,
+	})
+	if err != nil {
+		return fmt.Errorf("couldn't search posts: %w", err)
+	}
+
+	hasMorePages := len(posts) > int(postsPerPage)
+	if hasMorePages {
+		posts = posts[:postsPerPage]
+	}
+
+	if len(posts) == 0 {
+		if page == 1 {
+			fmt.Printf("No matching posts found for '%s'.\n", query)
+		} else {
+			fmt.Printf("No matching posts found on page %d for '%s'. Try a lower page number.\n", page, query)
+		}
+		return nil
+	}
+
+	fmt.Printf("Search results for '%s' (page %d, showing %d posts):\n\n", query, page, len(posts))
+	for i, post := range posts {
+		postNumber := offset + int32(i) + 1
+		fmt.Printf("%d. %s\n", postNumber, post.Title)
+		fmt.Printf("   Feed: %s\n", post.FeedName)
+		if post.Description.Valid && post.Description.String != "" {
+			desc := post.Description.String
+			if len(desc) > 200 {
+				desc = desc[:200] + "..."
+			}
+			fmt.Printf("   %s\n", desc)
+		}
+		if post.PublishedAt.Valid {
+			fmt.Printf("   Published: %s\n", post.PublishedAt.Time.Format("2006-01-02 15:04:05"))
+		}
+		fmt.Printf("   URL: %s\n", post.Url)
+		fmt.Println()
+	}
+
+	if hasMorePages {
+		fmt.Printf("To see more results, run: gator search %s %d\n", query, page+1)
+	}
+	if page > 1 {
+		fmt.Printf("To see previous results, run: gator search %s %d\n", query, page-1)
+	}
+
+	return nil
+}
+
 func main() {
 	// Load environment variables from .env file
 	if err := godotenv.Load(); err != nil {
@@ -440,6 +514,7 @@ func main() {
 	cmds.register("following", middlewareLoggedIn(handlerFollowing))
 	cmds.register("unfollow", middlewareLoggedIn(handlerUnfollow))
 	cmds.register("browse", middlewareLoggedIn(handlerBrowse))
+	cmds.register("search", middlewareLoggedIn(handlerSearch))
 
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "Error: not enough arguments. Usage: gator <command> [args...]")
