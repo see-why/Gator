@@ -330,7 +330,7 @@ func handlerBrowse(s *state, cmd command, user database.User) error {
 
 	if len(cmd.args) >= 1 {
 		// Try to parse the page argument
-		if parsedPage, err := fmt.Sscanf(cmd.args[0], "%d", &page); err != nil || parsedPage != 1 {
+		if parsedPage, err := fmt.Sscanf(cmd.args[0], "%d", &page); err != nil || parsedPage < 1 {
 			return fmt.Errorf("page must be a number, got: %s", cmd.args[0])
 		}
 		if page < 1 {
@@ -410,7 +410,7 @@ func handlerSearch(s *state, cmd command, user database.User) error {
 	query := cmd.args[0]
 	page := int32(1)
 	if len(cmd.args) >= 2 {
-		if parsedPage, err := fmt.Sscanf(cmd.args[1], "%d", &page); err != nil || parsedPage != 1 {
+		if parsedPage, err := fmt.Sscanf(cmd.args[1], "%d", &page); err != nil || parsedPage < 1 {
 			return fmt.Errorf("page must be a number, got: %s", cmd.args[1])
 		}
 		if page < 1 {
