@@ -375,3 +375,85 @@ func (q *Queries) GetPostsForUser(ctx context.Context, arg GetPostsForUserParams
 	}
 	return items, nil
 }
+
+const searchPostsForUser = `-- name: SearchPostsForUser :many
+SELECT
+        p.id,
+        p.created_at,
+        p.updated_at,
+        p.title,
+        p.url,
+        p.description,
+        p.published_at,
+        p.feed_id,
+        f.name as feed_name
+FROM posts p
+JOIN feeds f ON p.feed_id = f.id
+JOIN feed_follows ff ON f.id = ff.feed_id
+WHERE ff.user_id = $1
+    AND (
+        p.title ILIKE ('%' || $2 || '%')
+        OR p.description ILIKE ('%' || $2 || '%')
+    )
+ORDER BY p.published_at DESC NULLS LAST, p.created_at DESC
+LIMIT $3 OFFSET $4
+`
+
+type SearchPostsForUserParams struct {
+	UserID  uuid.UUID
+	Column2 sql.NullString
+	Limit   int32
+	Offset  int32
+}
+
+type SearchPostsForUserRow struct {
+	ID          uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	Title       string
+	Url         string
+	Description sql.NullString
+	PublishedAt sql.NullTime
+	FeedID      uuid.UUID
+	FeedName    string
+}
+
+// Search posts for a user by fuzzy match against title or description.
+// Params: user_id uuid, q text (search term), limit int, offset int
+func (q *Queries) SearchPostsForUser(ctx context.Context, arg SearchPostsForUserParams) ([]SearchPostsForUserRow, error) {
+	rows, err := q.db.QueryContext(ctx, searchPostsForUser,
+		arg.UserID,
+		arg.Column2,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchPostsForUserRow
+	for rows.Next() {
+		var i SearchPostsForUserRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Title,
+			&i.Url,
+			&i.Description,
+			&i.PublishedAt,
+			&i.FeedID,
+			&i.FeedName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

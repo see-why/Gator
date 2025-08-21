@@ -199,6 +199,24 @@ View posts from all followed feeds with pagination support. Shows 5 posts per pa
 
 Posts are sorted by publication date (newest first) and numbered sequentially across pages. Navigation hints are provided to help you move between pages.
 
+#### Search Posts
+
+**Search posts by fuzzy match (title or description):**
+
+```bash
+gator search <term> [page]
+```
+
+- `gator search rust` - Searches titles and descriptions for "rust" and shows page 1 of results.
+- `gator search "openai" 2` - Shows page 2 of search results for "openai".
+
+ 
+Notes:
+
+- Search is case-insensitive and performs a fuzzy substring match using ILIKE on both title and description.
+- Pagination matches the `browse` command: 5 results per page and navigation hints when more results exist.
+- Use quotes for multi-word search terms, e.g. `gator search "machine learning"`.
+
 ### Examples
 
 #### Basic User Setup
