@@ -36,15 +36,7 @@ type command struct {
 // The map is from command name to handler function
 // Handler signature: func(*state, command) error
 type commands struct {
-	handlers map[string]func(*state, 	for _, f := range feeds {
-		wg.Add(1)
-		sem <- struct{}{}
-
-		go func() {
-			defer wg.Done()
-			defer func() { <-sem }()
-
-			processFeed(ctx, queries, f.Url, f.ID, result)r
+	handlers map[string]func(*state, command) error
 }
 
 // middlewareLoggedIn is a higher-order function that wraps handlers requiring authentication
@@ -699,12 +691,12 @@ func aggregateFeeds(ctx context.Context, feeds []database.GetFeedsWithUsersRow, 
 		wg.Add(1)
 		sem <- struct{}{}
 
-		go func() {
+		go func(feed database.GetFeedsWithUsersRow) {
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			processFeed(ctx, f.Url, f.ID, &config, &mu, &result)
-		}()
+			processFeed(ctx, feed.Url, feed.ID, &config, &mu, &result)
+		}(f)
 	}
 
 	wg.Wait()
