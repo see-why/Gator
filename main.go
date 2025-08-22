@@ -173,45 +173,20 @@ func handlerAgg(s *state, cmd command) error {
 			return nil
 		}
 
+		// Create context with timeout for the aggregation operation
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+
 		client := rss.NewHTTPClient()
 
-		sem := make(chan struct{}, workers)
-		var wg sync.WaitGroup
-		var mu sync.Mutex
-		var totalFetched int
-
-		for _, f := range feeds {
-			wg.Add(1)
-			sem <- struct{}{}
-
-			// capture
-			feedURL := f.Url
-			feedName := f.Name
-			feedID := f.ID
-
-			go func() {
-				defer wg.Done()
-				defer func() { <-sem }()
-
-				rssFeed, err := rss.FetchFeed(context.Background(), client, feedURL)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "couldn't fetch %s: %v\n", feedURL, err)
-					return
-				}
-
-				if err := rss.SavePostsToDatabase(context.Background(), s.db, rssFeed, feedID); err != nil {
-					fmt.Fprintf(os.Stderr, "couldn't save posts from %s: %v\n", feedName, err)
-					return
-				}
-
-				mu.Lock()
-				totalFetched += len(rssFeed.Channel.Items)
-				mu.Unlock()
-			}()
+		config := AggregationConfig{
+			Workers: workers,
+			Client:  client,
+			DB:      s.db,
 		}
 
-		wg.Wait()
-		fmt.Printf("Finished aggregating %d feeds. Processed ~%d posts.\n", len(feeds), totalFetched)
+		result := aggregateFeeds(ctx, feeds, config)
+		fmt.Printf("Finished aggregating %d feeds. Processed ~%d posts.\n", len(feeds), result.TotalPosts)
 		return nil
 	}
 
@@ -230,7 +205,11 @@ func handlerAgg(s *state, cmd command) error {
 	// Create a reusable HTTP client with timeout configuration
 	client := rss.NewHTTPClient()
 
-	feed, err := rss.FetchFeed(context.Background(), client, feedURL)
+	// Create context with timeout for the single feed fetch
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	feed, err := rss.FetchFeed(ctx, client, feedURL)
 	if err != nil {
 		return fmt.Errorf("couldn't fetch feed: %w", err)
 	}
@@ -286,12 +265,17 @@ func handlerAddFeed(s *state, cmd command, user database.User) error {
 	// Fetch and save posts from the feed
 	fmt.Printf("Fetching posts from %s...\n", feed.Name)
 	client := rss.NewHTTPClient()
-	rssFeed, err := rss.FetchFeed(context.Background(), client, url)
+
+	// Create context with timeout for feed fetching
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	rssFeed, err := rss.FetchFeed(ctx, client, url)
 	if err != nil {
 		return fmt.Errorf("couldn't fetch RSS feed: %w", err)
 	}
 
-	err = rss.SavePostsToDatabase(context.Background(), s.db, rssFeed, feed.ID)
+	err = rss.SavePostsToDatabase(ctx, s.db, rssFeed, feed.ID)
 	if err != nil {
 		return fmt.Errorf("couldn't save posts to database: %w", err)
 	}
@@ -630,21 +614,65 @@ func renderPosts(views []PostView, page int32, postsPerPage int) string {
 	return b.String()
 }
 
-// aggregateFeeds concurrently fetches and saves posts for the provided feeds using the
-// provided fetch and save functions. It returns number of feeds processed and total posts processed.
-func aggregateFeeds(feeds []database.GetFeedsWithUsersRow, workers int, fetch func(ctx context.Context, client *http.Client, url string) (*rss.RSSFeed, error), save func(ctx context.Context, db *database.Queries, feed *rss.RSSFeed, feedID uuid.UUID) error, client *http.Client, db *database.Queries) (int, int) {
-	if workers <= 0 {
-		workers = 1
+// AggregationConfig holds configuration for concurrent feed aggregation
+type AggregationConfig struct {
+	Workers int
+	Fetch   func(ctx context.Context, client *http.Client, url string) (*rss.RSSFeed, error)
+	Save    func(ctx context.Context, db *database.Queries, feed *rss.RSSFeed, feedID uuid.UUID) error
+	Client  *http.Client
+	DB      *database.Queries
+}
+
+// AggregationResult holds the results of feed aggregation
+type AggregationResult struct {
+	FeedsProcessed int
+	TotalPosts     int
+}
+
+// validateConfig ensures the aggregation config has valid settings
+func validateConfig(config *AggregationConfig) {
+	if config.Workers <= 0 {
+		config.Workers = 1
 	}
-	sem := make(chan struct{}, workers)
+	if config.Fetch == nil {
+		config.Fetch = rss.FetchFeed
+	}
+	if config.Save == nil {
+		config.Save = rss.SavePostsToDatabase
+	}
+}
+
+// processFeed processes a single feed and updates shared counters
+func processFeed(ctx context.Context, feedURL string, feedID uuid.UUID, config *AggregationConfig, mu *sync.Mutex, result *AggregationResult) {
+	rssFeed, err := config.Fetch(ctx, config.Client, feedURL)
+	if err != nil {
+		return
+	}
+
+	// attempt to save; ignore errors for counting
+	_ = config.Save(ctx, config.DB, rssFeed, feedID)
+
+	mu.Lock()
+	result.FeedsProcessed++
+	result.TotalPosts += len(rssFeed.Channel.Items)
+	mu.Unlock()
+}
+
+// aggregateFeeds concurrently fetches and saves posts for the provided feeds.
+// Returns the number of feeds processed and total posts processed.
+func aggregateFeeds(ctx context.Context, feeds []database.GetFeedsWithUsersRow, config AggregationConfig) AggregationResult {
+	validateConfig(&config)
+
+	sem := make(chan struct{}, config.Workers)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-	totalPosts := 0
-	processed := 0
+	result := AggregationResult{}
 
 	for _, f := range feeds {
 		wg.Add(1)
 		sem <- struct{}{}
+
+		// capture loop variables
 		feedURL := f.Url
 		feedID := f.ID
 
@@ -652,21 +680,12 @@ func aggregateFeeds(feeds []database.GetFeedsWithUsersRow, workers int, fetch fu
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			rssFeed, err := fetch(context.Background(), client, feedURL)
-			if err != nil {
-				return
-			}
-			// attempt to save; ignore errors for counting
-			_ = save(context.Background(), db, rssFeed, feedID)
-
-			mu.Lock()
-			processed++
-			totalPosts += len(rssFeed.Channel.Items)
-			mu.Unlock()
+			processFeed(ctx, feedURL, feedID, &config, &mu, &result)
 		}()
 	}
+
 	wg.Wait()
-	return processed, totalPosts
+	return result
 }
 
 func main() {
