@@ -36,7 +36,15 @@ type command struct {
 // The map is from command name to handler function
 // Handler signature: func(*state, command) error
 type commands struct {
-	handlers map[string]func(*state, command) error
+	handlers map[string]func(*state, 	for _, f := range feeds {
+		wg.Add(1)
+		sem <- struct{}{}
+
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			processFeed(ctx, queries, f.Url, f.ID, result)r
 }
 
 // middlewareLoggedIn is a higher-order function that wraps handlers requiring authentication
@@ -187,6 +195,9 @@ func handlerAgg(s *state, cmd command) error {
 
 		result := aggregateFeeds(ctx, feeds, config)
 		fmt.Printf("Finished aggregating %d feeds. Processed ~%d posts.\n", len(feeds), result.TotalPosts)
+		if result.FetchErrors > 0 || result.SaveErrors > 0 {
+			fmt.Printf("Errors: %d fetch failures, %d save failures\n", result.FetchErrors, result.SaveErrors)
+		}
 		return nil
 	}
 
@@ -474,8 +485,12 @@ func handlerSearch(s *state, cmd command, user database.User) error {
 
 	offset := (page - 1) * postsPerPage
 
+	// Create context with timeout for the search operation
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	// Query for one extra to determine if more pages exist
-	posts, err := s.db.SearchPostsForUser(context.Background(), database.SearchPostsForUserParams{
+	posts, err := s.db.SearchPostsForUser(ctx, database.SearchPostsForUserParams{
 		UserID:  user.ID,
 		Column2: sql.NullString{String: query, Valid: true},
 		Limit:   postsPerPage + 1,
@@ -627,6 +642,8 @@ type AggregationConfig struct {
 type AggregationResult struct {
 	FeedsProcessed int
 	TotalPosts     int
+	FetchErrors    int
+	SaveErrors     int
 }
 
 // validateConfig ensures the aggregation config has valid settings
@@ -646,11 +663,21 @@ func validateConfig(config *AggregationConfig) {
 func processFeed(ctx context.Context, feedURL string, feedID uuid.UUID, config *AggregationConfig, mu *sync.Mutex, result *AggregationResult) {
 	rssFeed, err := config.Fetch(ctx, config.Client, feedURL)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error fetching feed %s: %v\n", feedURL, err)
+		mu.Lock()
+		result.FetchErrors++
+		mu.Unlock()
 		return
 	}
 
-	// attempt to save; ignore errors for counting
-	_ = config.Save(ctx, config.DB, rssFeed, feedID)
+	// attempt to save and track errors
+	if err := config.Save(ctx, config.DB, rssFeed, feedID); err != nil {
+		fmt.Fprintf(os.Stderr, "Error saving posts from feed %s: %v\n", feedURL, err)
+		mu.Lock()
+		result.SaveErrors++
+		mu.Unlock()
+		return
+	}
 
 	mu.Lock()
 	result.FeedsProcessed++
@@ -672,15 +699,11 @@ func aggregateFeeds(ctx context.Context, feeds []database.GetFeedsWithUsersRow, 
 		wg.Add(1)
 		sem <- struct{}{}
 
-		// capture loop variables
-		feedURL := f.Url
-		feedID := f.ID
-
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			processFeed(ctx, feedURL, feedID, &config, &mu, &result)
+			processFeed(ctx, f.Url, f.ID, &config, &mu, &result)
 		}()
 	}
 
