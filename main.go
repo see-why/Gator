@@ -9,7 +9,11 @@ import (
 	"gator/internal/database"
 	"gator/internal/rss"
 	"os"
+	"strconv"
+	"sync"
 	"time"
+	"strings"
+	"net/http"
 
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
@@ -148,9 +152,79 @@ func handlerUsers(s *state, cmd command) error {
 
 // handlerAgg fetches a single feed and prints the entire struct to the console
 func handlerAgg(s *state, cmd command) error {
-	feedURL := os.Getenv("FEED_URL")
+	// If user asks to aggregate all feeds: `agg all [workers]`
+	if len(cmd.args) >= 1 && cmd.args[0] == "all" {
+		// Determine worker concurrency (optional second argument)
+		workers := 5 // default
+		if len(cmd.args) >= 2 {
+			if w, err := strconv.Atoi(cmd.args[1]); err == nil && w > 0 {
+				workers = w
+			}
+		}
+
+		// Fetch all feeds from database
+		feeds, err := s.db.GetFeedsWithUsers(context.Background())
+		if err != nil {
+			return fmt.Errorf("couldn't retrieve feeds: %w", err)
+		}
+
+		if len(feeds) == 0 {
+			fmt.Println("No feeds found to aggregate.")
+			return nil
+		}
+
+		client := rss.NewHTTPClient()
+
+		sem := make(chan struct{}, workers)
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		var totalFetched int
+
+		for _, f := range feeds {
+			wg.Add(1)
+			sem <- struct{}{}
+
+			// capture
+			feedURL := f.Url
+			feedName := f.Name
+			feedID := f.ID
+
+			go func() {
+				defer wg.Done()
+				defer func() { <-sem }()
+
+				rssFeed, err := rss.FetchFeed(context.Background(), client, feedURL)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "couldn't fetch %s: %v\n", feedURL, err)
+					return
+				}
+
+				if err := rss.SavePostsToDatabase(context.Background(), s.db, rssFeed, feedID); err != nil {
+					fmt.Fprintf(os.Stderr, "couldn't save posts from %s: %v\n", feedName, err)
+					return
+				}
+
+				mu.Lock()
+				totalFetched += len(rssFeed.Channel.Items)
+				mu.Unlock()
+			}()
+		}
+
+		wg.Wait()
+		fmt.Printf("Finished aggregating %d feeds. Processed ~%d posts.\n", len(feeds), totalFetched)
+		return nil
+	}
+
+	// Otherwise, fetch a single feed. Prefer explicit URL arg, then FEED_URL env.
+	feedURL := ""
+	if len(cmd.args) >= 1 {
+		feedURL = cmd.args[0]
+	}
 	if feedURL == "" {
-		return fmt.Errorf("FEED_URL environment variable is not set")
+		feedURL = os.Getenv("FEED_URL")
+	}
+	if feedURL == "" {
+		return fmt.Errorf("FEED_URL environment variable is not set and no URL argument provided")
 	}
 
 	// Create a reusable HTTP client with timeout configuration
@@ -327,14 +401,11 @@ func handlerUnfollow(s *state, cmd command, user database.User) error {
 func handlerBrowse(s *state, cmd command, user database.User) error {
 	const postsPerPage = 5 // Number of posts to show per page
 	page := int32(1)       // Default to page 1
-
 	if len(cmd.args) >= 1 {
-		// Try to parse the page argument
-		if parsedPage, err := fmt.Sscanf(cmd.args[0], "%d", &page); err != nil || parsedPage < 1 {
-			return fmt.Errorf("page must be a number, got: %s", cmd.args[0])
-		}
-		if page < 1 {
-			return fmt.Errorf("page must be 1 or greater, got: %d", page)
+		var err error
+		page, err = parsePageArg(cmd.args[0])
+		if err != nil {
+			return err
 		}
 	}
 
@@ -353,7 +424,7 @@ func handlerBrowse(s *state, cmd command, user database.User) error {
 
 	// Check if there are more pages available
 	hasMorePages := len(posts) > int(postsPerPage)
-	
+
 	// If we got more than postsPerPage, trim the extra post
 	if hasMorePages {
 		posts = posts[:postsPerPage]
@@ -410,11 +481,10 @@ func handlerSearch(s *state, cmd command, user database.User) error {
 	query := cmd.args[0]
 	page := int32(1)
 	if len(cmd.args) >= 2 {
-		if parsedPage, err := fmt.Sscanf(cmd.args[1], "%d", &page); err != nil || parsedPage < 1 {
-			return fmt.Errorf("page must be a number, got: %s", cmd.args[1])
-		}
-		if page < 1 {
-			return fmt.Errorf("page must be 1 or greater, got: %d", page)
+		var err error
+		page, err = parsePageArg(cmd.args[1])
+		if err != nil {
+			return err
 		}
 	}
 
@@ -472,6 +542,131 @@ func handlerSearch(s *state, cmd command, user database.User) error {
 	}
 
 	return nil
+}
+
+// parsePageArg parses a page argument string and returns a validated int32 page number.
+func parsePageArg(s string) (int32, error) {
+	i, err := strconv.Atoi(s)
+	if err != nil {
+		return 0, fmt.Errorf("page must be a number, got: %s", s)
+	}
+	if i < 1 {
+		return 0, fmt.Errorf("page must be 1 or greater, got: %d", i)
+	}
+	return int32(i), nil
+}
+
+// PostView is a lightweight view of a post used by rendering functions and tests.
+type PostView struct {
+	Title       string
+	Url         string
+	FeedName    string
+	Description sql.NullString
+	PublishedAt sql.NullTime
+}
+
+// convert functions
+func toPostViewsFromGet(rows []database.GetPostsForUserRow) []PostView {
+	out := make([]PostView, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, PostView{
+			Title:       r.Title,
+			Url:         r.Url,
+			FeedName:    r.FeedName,
+			Description: r.Description,
+			PublishedAt: r.PublishedAt,
+		})
+	}
+	return out
+}
+
+func toPostViewsFromSearch(rows []database.SearchPostsForUserRow) []PostView {
+	out := make([]PostView, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, PostView{
+			Title:       r.Title,
+			Url:         r.Url,
+			FeedName:    r.FeedName,
+			Description: r.Description,
+			PublishedAt: r.PublishedAt,
+		})
+	}
+	return out
+}
+
+// renderPosts renders a page of posts into a string, returning the output.
+func renderPosts(views []PostView, page int32, postsPerPage int) string {
+	offset := (page - 1) * int32(postsPerPage)
+	hasMore := false
+	if len(views) > postsPerPage {
+		hasMore = true
+		views = views[:postsPerPage]
+	}
+
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("Posts (page %d, showing %d posts):\n\n", page, len(views)))
+	for i, post := range views {
+		postNumber := offset + int32(i) + 1
+		b.WriteString(fmt.Sprintf("%d. %s\n", postNumber, post.Title))
+		b.WriteString(fmt.Sprintf("   Feed: %s\n", post.FeedName))
+		if post.Description.Valid && post.Description.String != "" {
+			desc := post.Description.String
+			if len(desc) > 200 {
+				desc = desc[:200] + "..."
+			}
+			b.WriteString(fmt.Sprintf("   %s\n", desc))
+		}
+		if post.PublishedAt.Valid {
+			b.WriteString(fmt.Sprintf("   Published: %s\n", post.PublishedAt.Time.Format("2006-01-02 15:04:05")))
+		}
+		b.WriteString(fmt.Sprintf("   URL: %s\n\n", post.Url))
+	}
+	if hasMore {
+		b.WriteString(fmt.Sprintf("To see more posts, run: gator browse %d\n", page+1))
+	}
+	if page > 1 {
+		b.WriteString(fmt.Sprintf("To see previous posts, run: gator browse %d\n", page-1))
+	}
+	return b.String()
+}
+
+// aggregateFeeds concurrently fetches and saves posts for the provided feeds using the
+// provided fetch and save functions. It returns number of feeds processed and total posts processed.
+func aggregateFeeds(feeds []database.GetFeedsWithUsersRow, workers int, fetch func(ctx context.Context, client *http.Client, url string) (*rss.RSSFeed, error), save func(ctx context.Context, db *database.Queries, feed *rss.RSSFeed, feedID uuid.UUID) error, client *http.Client, db *database.Queries) (int, int) {
+	if workers <= 0 {
+		workers = 1
+	}
+	sem := make(chan struct{}, workers)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	totalPosts := 0
+	processed := 0
+
+	for _, f := range feeds {
+		wg.Add(1)
+		sem <- struct{}{}
+		feedURL := f.Url
+		feedID := f.ID
+
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			rssFeed, err := fetch(context.Background(), client, feedURL)
+			if err != nil {
+				return
+			}
+			// attempt to save; ignore errors for counting
+			_ = save(context.Background(), db, rssFeed, feedID)
+
+			mu.Lock()
+			processed++
+			totalPosts += len(rssFeed.Channel.Items)
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+	return processed, totalPosts
 }
 
 func main() {
