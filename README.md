@@ -210,7 +210,6 @@ gator search <term> [page]
 - `gator search rust` - Searches titles and descriptions for "rust" and shows page 1 of results.
 - `gator search "openai" 2` - Shows page 2 of search results for "openai".
 
- 
 Notes:
 
 - Search is case-insensitive and performs a fuzzy substring match using ILIKE on both title and description.
