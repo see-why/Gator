@@ -431,6 +431,7 @@ func handlerBrowse(s *state, cmd command, user database.User) error {
 		// Calculate the overall post number based on page and position
 		postNumber := offset + int32(i) + 1
 		fmt.Printf("%d. %s\n", postNumber, post.Title)
+		fmt.Printf("   Post ID: %s\n", post.ID)
 		fmt.Printf("   Feed: %s\n", post.FeedName)
 		if post.Description.Valid && post.Description.String != "" {
 			// Truncate description if it's too long
@@ -510,6 +511,7 @@ func handlerSearch(s *state, cmd command, user database.User) error {
 	for i, post := range posts {
 		postNumber := offset + int32(i) + 1
 		fmt.Printf("%d. %s\n", postNumber, post.Title)
+		fmt.Printf("   Post ID: %s\n", post.ID)
 		fmt.Printf("   Feed: %s\n", post.FeedName)
 		if post.Description.Valid && post.Description.String != "" {
 			desc := post.Description.String
@@ -535,6 +537,160 @@ func handlerSearch(s *state, cmd command, user database.User) error {
 	return nil
 }
 
+// handlerBookmark adds a post to the user's bookmarks
+func handlerBookmark(s *state, cmd command, user database.User) error {
+	if len(cmd.args) < 1 {
+		return fmt.Errorf("bookmark requires a post ID argument")
+	}
+
+	// Parse the post ID
+	postIDStr := cmd.args[0]
+	postID, err := uuid.Parse(postIDStr)
+	if err != nil {
+		return fmt.Errorf("invalid post ID format: %s", postIDStr)
+	}
+
+	// Check if the post exists
+	_, err = s.db.GetPostByID(context.Background(), postID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("post not found with ID: %s", postIDStr)
+		}
+		return fmt.Errorf("database error while looking up post: %w", err)
+	}
+
+	// Create the bookmark
+	bookmark, err := s.db.CreateBookmark(context.Background(), database.CreateBookmarkParams{
+		ID:        uuid.New(),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+		UserID:    user.ID,
+		PostID:    postID,
+	})
+	if err != nil {
+		// Check if the bookmark already exists
+		count, checkErr := s.db.CheckBookmarkExists(context.Background(), database.CheckBookmarkExistsParams{
+			UserID: user.ID,
+			PostID: postID,
+		})
+		if checkErr == nil && count > 0 {
+			return fmt.Errorf("post is already bookmarked")
+		}
+		return fmt.Errorf("couldn't create bookmark: %w", err)
+	}
+
+	fmt.Printf("Successfully bookmarked post %s\n", postID)
+	fmt.Printf("Bookmark ID: %s\n", bookmark.ID)
+	fmt.Printf("Bookmarked at: %s\n", bookmark.CreatedAt.Format("2006-01-02 15:04:05"))
+	return nil
+}
+
+// handlerUnbookmark removes a post from the user's bookmarks
+func handlerUnbookmark(s *state, cmd command, user database.User) error {
+	if len(cmd.args) < 1 {
+		return fmt.Errorf("unbookmark requires a post ID argument")
+	}
+
+	// Parse the post ID
+	postIDStr := cmd.args[0]
+	postID, err := uuid.Parse(postIDStr)
+	if err != nil {
+		return fmt.Errorf("invalid post ID format: %s", postIDStr)
+	}
+
+	// Delete the bookmark
+	rowsAffected, err := s.db.DeleteBookmark(context.Background(), database.DeleteBookmarkParams{
+		UserID: user.ID,
+		PostID: postID,
+	})
+	if err != nil {
+		return fmt.Errorf("couldn't remove bookmark: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("post %s is not bookmarked", postIDStr)
+	}
+
+	fmt.Printf("Successfully removed bookmark for post %s\n", postID)
+	return nil
+}
+
+// handlerBookmarks displays all bookmarked posts for the current user with pagination
+func handlerBookmarks(s *state, cmd command, user database.User) error {
+	const postsPerPage = 5 // Number of bookmarks to show per page
+	page := int32(1)       // Default to page 1
+	if len(cmd.args) >= 1 {
+		var err error
+		page, err = parsePageArg(cmd.args[0])
+		if err != nil {
+			return err
+		}
+	}
+
+	// Calculate offset based on page number
+	offset := (page - 1) * postsPerPage
+
+	// Get bookmarks for the user with pagination (query for one extra to check if more pages exist)
+	bookmarks, err := s.db.GetBookmarksForUser(context.Background(), database.GetBookmarksForUserParams{
+		UserID: user.ID,
+		Limit:  postsPerPage + 1, // Query for one extra bookmark
+		Offset: offset,
+	})
+	if err != nil {
+		return fmt.Errorf("couldn't retrieve bookmarks: %w", err)
+	}
+
+	// Check if there are more pages available
+	hasMorePages := len(bookmarks) > int(postsPerPage)
+
+	// If we got more than postsPerPage, trim the extra bookmark
+	if hasMorePages {
+		bookmarks = bookmarks[:postsPerPage]
+	}
+
+	if len(bookmarks) == 0 {
+		if page == 1 {
+			fmt.Printf("No bookmarked posts found. Try bookmarking some posts first!\n")
+		} else {
+			fmt.Printf("No bookmarked posts found on page %d. Try a lower page number.\n", page)
+		}
+		return nil
+	}
+
+	fmt.Printf("Bookmarked posts (page %d, showing %d posts):\n\n", page, len(bookmarks))
+	for i, bookmark := range bookmarks {
+		// Calculate the overall bookmark number based on page and position
+		bookmarkNumber := offset + int32(i) + 1
+		fmt.Printf("%d. %s\n", bookmarkNumber, bookmark.Title)
+		fmt.Printf("   Post ID: %s\n", bookmark.ID)
+		fmt.Printf("   Feed: %s\n", bookmark.FeedName)
+		if bookmark.Description.Valid && bookmark.Description.String != "" {
+			// Truncate description if it's too long
+			desc := bookmark.Description.String
+			if len(desc) > 200 {
+				desc = desc[:200] + "..."
+			}
+			fmt.Printf("   %s\n", desc)
+		}
+		if bookmark.PublishedAt.Valid {
+			fmt.Printf("   Published: %s\n", bookmark.PublishedAt.Time.Format("2006-01-02 15:04:05"))
+		}
+		fmt.Printf("   Bookmarked: %s\n", bookmark.BookmarkedAt.Format("2006-01-02 15:04:05"))
+		fmt.Printf("   URL: %s\n", bookmark.Url)
+		fmt.Println()
+	}
+
+	// Show pagination info
+	if hasMorePages {
+		fmt.Printf("To see more bookmarks, run: gator bookmarks %d\n", page+1)
+	}
+	if page > 1 {
+		fmt.Printf("To see previous bookmarks, run: gator bookmarks %d\n", page-1)
+	}
+
+	return nil
+}
+
 // parsePageArg parses a page argument string and returns a validated int32 page number.
 func parsePageArg(s string) (int32, error) {
 	i, err := strconv.Atoi(s)
@@ -549,6 +705,7 @@ func parsePageArg(s string) (int32, error) {
 
 // PostView is a lightweight view of a post used by rendering functions and tests.
 type PostView struct {
+	ID          uuid.UUID
 	Title       string
 	Url         string
 	FeedName    string
@@ -561,6 +718,7 @@ func toPostViewsFromGet(rows []database.GetPostsForUserRow) []PostView {
 	out := make([]PostView, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, PostView{
+			ID:          r.ID,
 			Title:       r.Title,
 			Url:         r.Url,
 			FeedName:    r.FeedName,
@@ -575,6 +733,7 @@ func toPostViewsFromSearch(rows []database.SearchPostsForUserRow) []PostView {
 	out := make([]PostView, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, PostView{
+			ID:          r.ID,
 			Title:       r.Title,
 			Url:         r.Url,
 			FeedName:    r.FeedName,
@@ -599,6 +758,7 @@ func renderPosts(views []PostView, page int32, postsPerPage int) string {
 	for i, post := range views {
 		postNumber := offset + int32(i) + 1
 		b.WriteString(fmt.Sprintf("%d. %s\n", postNumber, post.Title))
+		b.WriteString(fmt.Sprintf("   Post ID: %s\n", post.ID))
 		b.WriteString(fmt.Sprintf("   Feed: %s\n", post.FeedName))
 		if post.Description.Valid && post.Description.String != "" {
 			desc := post.Description.String
@@ -744,6 +904,9 @@ func main() {
 	cmds.register("unfollow", middlewareLoggedIn(handlerUnfollow))
 	cmds.register("browse", middlewareLoggedIn(handlerBrowse))
 	cmds.register("search", middlewareLoggedIn(handlerSearch))
+	cmds.register("bookmark", middlewareLoggedIn(handlerBookmark))
+	cmds.register("unbookmark", middlewareLoggedIn(handlerUnbookmark))
+	cmds.register("bookmarks", middlewareLoggedIn(handlerBookmarks))
 
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "Error: not enough arguments. Usage: gator <command> [args...]")
