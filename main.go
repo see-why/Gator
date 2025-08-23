@@ -568,15 +568,12 @@ func handlerBookmark(s *state, cmd command, user database.User) error {
 		PostID:    postID,
 	})
 	if err != nil {
-		// Check if the bookmark already exists
-		count, checkErr := s.db.CheckBookmarkExists(context.Background(), database.CheckBookmarkExistsParams{
-			UserID: user.ID,
-			PostID: postID,
-		})
-		if checkErr == nil && count > 0 {
-			return fmt.Errorf("post is already bookmarked")
-		}
 		return fmt.Errorf("couldn't create bookmark: %w", err)
+	}
+
+	// Check if the bookmark was actually created (ON CONFLICT DO NOTHING returns zero values)
+	if bookmark.ID == uuid.Nil {
+		return fmt.Errorf("post is already bookmarked")
 	}
 
 	fmt.Printf("Successfully bookmarked post %s\n", postID)
