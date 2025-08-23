@@ -13,23 +13,6 @@ import (
 	"github.com/google/uuid"
 )
 
-const checkBookmarkExists = `-- name: CheckBookmarkExists :one
-SELECT COUNT(*) FROM bookmarks 
-WHERE user_id = $1 AND post_id = $2
-`
-
-type CheckBookmarkExistsParams struct {
-	UserID uuid.UUID
-	PostID uuid.UUID
-}
-
-func (q *Queries) CheckBookmarkExists(ctx context.Context, arg CheckBookmarkExistsParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, checkBookmarkExists, arg.UserID, arg.PostID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const createBookmark = `-- name: CreateBookmark :one
 INSERT INTO bookmarks (id, created_at, updated_at, user_id, post_id)
 VALUES ($1, $2, $3, $4, $5)
