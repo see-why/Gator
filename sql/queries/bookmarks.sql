@@ -30,7 +30,3 @@ LIMIT $2 OFFSET $3;
 
 -- name: GetPostByID :one
 SELECT * FROM posts WHERE id = $1;
-
--- name: CheckBookmarkExists :one
-SELECT COUNT(*) FROM bookmarks 
-WHERE user_id = $1 AND post_id = $2;
