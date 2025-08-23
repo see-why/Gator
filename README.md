@@ -11,6 +11,8 @@ Gator is a command-line application built in Go that provides user management an
 - **RSS Feed Management**: Add, follow, and unfollow RSS feeds
 - **Post Aggregation**: Automatically fetch and store posts from followed feeds
 - **Pagination**: Browse posts with user-friendly page-based navigation (5 posts per page)
+- **Search Functionality**: Fuzzy search through post titles and descriptions
+- **Bookmarking**: Save and manage favorite posts for later reading
 - **User Management**: Register, login, and manage multiple users
 - **PostgreSQL Integration**: Persistent data storage with migrations
 - **CLI Interface**: Easy-to-use command-line interface with comprehensive commands
@@ -216,6 +218,36 @@ Notes:
 - Pagination matches the `browse` command: 5 results per page and navigation hints when more results exist.
 - Use quotes for multi-word search terms, e.g. `gator search "machine learning"`.
 
+#### Bookmark Management
+
+**Bookmark a post for later reading:**
+
+```bash
+gator bookmark <post_id>
+```
+
+**Remove a bookmark:**
+
+```bash
+gator unbookmark <post_id>
+```
+
+**View all bookmarked posts:**
+
+```bash
+gator bookmarks [page]
+```
+
+- `gator bookmarks` - Shows page 1 of your bookmarked posts
+- `gator bookmarks 2` - Shows page 2 of bookmarked posts
+
+Notes:
+
+- Post IDs are displayed when browsing or searching posts
+- Bookmarks are sorted by bookmark creation date (newest first)
+- Each bookmark shows when it was bookmarked and the original publication date
+- Pagination works the same as browse and search commands (5 posts per page)
+
 ### Examples
 
 #### Basic User Setup
@@ -303,6 +335,63 @@ gator browse 5
 gator reset
 ```
 
+#### Bookmark Workflow
+
+```bash
+# Browse posts to find something interesting
+gator browse
+# Output:
+# Posts (page 1, showing 5 posts):
+# 
+# 1. Interesting AI Article
+#    Post ID: 550e8400-e29b-41d4-a716-446655440000
+#    Feed: Tech News
+#    Published: 2025-08-22 10:30:00
+#    URL: https://example.com/ai-article
+#
+# 2. Another Great Article
+#    Post ID: 6ba7b810-9dad-11d1-80b4-00c04fd430c8
+#    Feed: Science Daily
+#    Published: 2025-08-22 09:15:00
+#    URL: https://example.com/science-article
+
+# Bookmark the AI article for later reading
+gator bookmark 550e8400-e29b-41d4-a716-446655440000
+# Output:
+# Successfully bookmarked post 550e8400-e29b-41d4-a716-446655440000
+# Bookmark ID: 7ca7b820-8ead-22f2-90c5-11d04fd430d9
+# Bookmarked at: 2025-08-22 14:30:00
+
+# Search for more articles about AI
+gator search "artificial intelligence"
+# Bookmark another interesting post
+gator bookmark 6ba7b810-9dad-11d1-80b4-00c04fd430c8
+
+# View all your bookmarked posts
+gator bookmarks
+# Output:
+# Bookmarked posts (page 1, showing 2 posts):
+#
+# 1. Another Great Article
+#    Post ID: 6ba7b810-9dad-11d1-80b4-00c04fd430c8
+#    Feed: Science Daily
+#    Published: 2025-08-22 09:15:00
+#    Bookmarked: 2025-08-22 14:31:00
+#    URL: https://example.com/science-article
+#
+# 2. Interesting AI Article
+#    Post ID: 550e8400-e29b-41d4-a716-446655440000
+#    Feed: Tech News
+#    Published: 2025-08-22 10:30:00
+#    Bookmarked: 2025-08-22 14:30:00
+#    URL: https://example.com/ai-article
+
+# Remove a bookmark when done reading
+gator unbookmark 550e8400-e29b-41d4-a716-446655440000
+# Output:
+# Successfully removed bookmark for post 550e8400-e29b-41d4-a716-446655440000
+```
+
 ## Project Structure
 
 ```text
@@ -318,18 +407,21 @@ Gator/
 │   │   ├── db.go
 │   │   ├── models.go
 │   │   ├── users.sql.go
-│   │   └── feeds.sql.go
+│   │   ├── feeds.sql.go
+│   │   └── bookmarks.sql.go
 │   └── rss/
 │       └── rss.go             # RSS feed fetching and parsing
 └── sql/
     ├── queries/
     │   ├── users.sql          # User-related SQL queries
-    │   └── feeds.sql          # Feed and post-related SQL queries
+    │   ├── feeds.sql          # Feed and post-related SQL queries
+    │   └── bookmarks.sql      # Bookmark-related SQL queries
     └── schema/
         ├── 001_users.sql      # User table migration
         ├── 002_feeds.sql      # Feed table migration
         ├── 003_feed_follows.sql  # Feed follows table migration
-        └── 004_posts.sql      # Posts table migration
+        ├── 004_posts.sql      # Posts table migration
+        └── 005_bookmarks.sql  # Bookmarks table migration
 ```
 
 ## Development
