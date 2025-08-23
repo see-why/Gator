@@ -20,8 +20,8 @@ func TestRenderPosts_TruncationAndPagination(t *testing.T) {
 	}
 
 	views := []PostView{
-		{Title: "One", Url: "u1", FeedName: "F1", Description: sql.NullString{String: longDesc, Valid: true}, PublishedAt: sql.NullTime{Valid: false}},
-		{Title: "Two", Url: "u2", FeedName: "F2"},
+		{ID: uuid.New(), Title: "One", Url: "u1", FeedName: "F1", Description: sql.NullString{String: longDesc, Valid: true}, PublishedAt: sql.NullTime{Valid: false}},
+		{ID: uuid.New(), Title: "Two", Url: "u2", FeedName: "F2"},
 	}
 
 	out := renderPosts(views, 1, 1) // postsPerPage = 1 -> will show 1 post and hint for more
