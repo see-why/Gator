@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"gator/internal/api"
 	"gator/internal/config"
 	"gator/internal/database"
 	"gator/internal/rss"
@@ -103,6 +104,7 @@ func handlerRegister(s *state, cmd command) error {
 		CreatedAt: time.Now().UTC(),
 		UpdatedAt: time.Now().UTC(),
 		Name:      username,
+		ApiKey:    sql.NullString{Valid: false}, // CLI users don't get API keys by default
 	})
 	if err != nil {
 		return fmt.Errorf("couldn't create user: %w", err)
@@ -688,6 +690,26 @@ func handlerBookmarks(s *state, cmd command, user database.User) error {
 	return nil
 }
 
+// handlerServe starts the HTTP API server
+func handlerServe(s *state, cmd command) error {
+	port := "8080" // default port
+	if len(cmd.args) >= 1 {
+		port = cmd.args[0]
+	}
+
+	// Check for PORT environment variable
+	if envPort := os.Getenv("PORT"); envPort != "" {
+		port = envPort
+	}
+
+	server := api.NewServer(s.db, port)
+	fmt.Printf("Starting Gator HTTP API server on port %s\n", port)
+	fmt.Printf("Health check: http://localhost:%s/health\n", port)
+	fmt.Printf("API documentation: http://localhost:%s/api/docs\n", port)
+
+	return server.Start()
+}
+
 // parsePageArg parses a page argument string and returns a validated int32 page number.
 func parsePageArg(s string) (int32, error) {
 	i, err := strconv.Atoi(s)
@@ -894,6 +916,7 @@ func main() {
 	cmds.register("reset", handlerReset)
 	cmds.register("users", handlerUsers)
 	cmds.register("agg", handlerAgg)
+	cmds.register("serve", handlerServe)
 	cmds.register("addfeed", middlewareLoggedIn(handlerAddFeed))
 	cmds.register("feeds", handlerFeeds)
 	cmds.register("follow", middlewareLoggedIn(handlerFollow))
