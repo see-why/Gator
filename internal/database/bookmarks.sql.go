@@ -16,7 +16,6 @@ import (
 const createBookmark = `-- name: CreateBookmark :one
 INSERT INTO bookmarks (id, created_at, updated_at, user_id, post_id)
 VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT (user_id, post_id) DO NOTHING
 RETURNING id, created_at, updated_at, user_id, post_id
 `
 
