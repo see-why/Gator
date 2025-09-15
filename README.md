@@ -1,10 +1,10 @@
 # Gator
 
-A CLI tool for managing RSS feeds and users with PostgreSQL database integration.
+A CLI tool and HTTP API for managing RSS feeds and users with PostgreSQL database integration.
 
 ## Overview
 
-Gator is a command-line application built in Go that provides user management and RSS feed functionality. It features a robust CLI interface with database persistence using PostgreSQL and SQLC for type-safe database operations.
+Gator is a command-line application and HTTP API server built in Go that provides user management and RSS feed functionality. It features both a robust CLI interface and a comprehensive REST API with database persistence using PostgreSQL and SQLC for type-safe database operations.
 
 ## Features
 
@@ -16,6 +16,8 @@ Gator is a command-line application built in Go that provides user management an
 - **User Management**: Register, login, and manage multiple users
 - **PostgreSQL Integration**: Persistent data storage with migrations
 - **CLI Interface**: Easy-to-use command-line interface with comprehensive commands
+- **HTTP API**: RESTful API with authentication for remote access
+- **API Authentication**: Secure API key-based authentication system
 - **Type-safe Database Operations**: Uses SQLC for generated Go code
 - **Configuration Management**: JSON-based configuration system
 
@@ -80,6 +82,8 @@ Install the Gator CLI using Go:
 go install github.com/see-why/Gator@latest
 ```
 
+This gives you access to both the CLI interface and the HTTP API server functionality.
+
 ## Configuration
 
 Create a configuration file at `~/.gatorconfig.json`:
@@ -142,6 +146,14 @@ gator reset
 ```
 
 Deletes all users from the database.
+
+**Start HTTP API server:**
+
+```bash
+gator serve [port]
+```
+
+Starts the HTTP API server for remote access. See the [HTTP API](#http-api) section for detailed usage.
 
 #### Feed Management
 
@@ -392,6 +404,167 @@ gator unbookmark 550e8400-e29b-41d4-a716-446655440000
 # Successfully removed bookmark for post 550e8400-e29b-41d4-a716-446655440000
 ```
 
+## HTTP API
+
+Gator includes a comprehensive HTTP API that provides remote access to all RSS feed functionality through REST endpoints.
+
+### Starting the API Server
+
+**Start the HTTP server:**
+
+```bash
+gator serve [port]
+```
+
+- `gator serve` - Starts server on port 8080 (default)
+- `gator serve 3000` - Starts server on port 3000
+- Server also respects the `PORT` environment variable
+
+The server provides:
+- Health check endpoint: `http://localhost:8080/health`
+- Interactive API documentation: `http://localhost:8080/api/docs`
+
+### Authentication
+
+The API uses API key-based authentication. All endpoints (except health check and documentation) require authentication.
+
+**Authentication Header Format:**
+```
+Authorization: ApiKey <your_api_key_here>
+```
+
+### API Endpoints
+
+#### Authentication Endpoints
+
+**Register a new user and get API key:**
+```bash
+curl -X POST http://localhost:8080/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"name": "username"}'
+```
+
+**Login with existing user:**
+```bash
+curl -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"name": "username"}'
+```
+
+Both endpoints return:
+```json
+{
+  "user": {"id": "uuid", "name": "username"},
+  "api_key": "64-character-hex-string"
+}
+```
+
+#### User Management
+
+**Get all users:**
+```bash
+curl -H "Authorization: ApiKey <api_key>" \
+  http://localhost:8080/api/users
+```
+
+#### Feed Management
+
+**Get all feeds:**
+```bash
+curl -H "Authorization: ApiKey <api_key>" \
+  http://localhost:8080/api/feeds
+```
+
+**Create a new feed:**
+```bash
+curl -X POST http://localhost:8080/api/feeds \
+  -H "Content-Type: application/json" \
+  -H "Authorization: ApiKey <api_key>" \
+  -d '{"name": "Feed Name", "url": "https://example.com/feed.xml"}'
+```
+
+#### Feed Following
+
+**Get user's followed feeds:**
+```bash
+curl -H "Authorization: ApiKey <api_key>" \
+  http://localhost:8080/api/feed-follows
+```
+
+**Follow a feed:**
+```bash
+curl -X POST http://localhost:8080/api/feed-follows \
+  -H "Content-Type: application/json" \
+  -H "Authorization: ApiKey <api_key>" \
+  -d '{"feed_url": "https://example.com/feed.xml"}'
+```
+
+**Unfollow a feed:**
+```bash
+curl -X DELETE http://localhost:8080/api/feed-follows \
+  -H "Content-Type: application/json" \
+  -H "Authorization: ApiKey <api_key>" \
+  -d '{"feed_url": "https://example.com/feed.xml"}'
+```
+
+#### Posts
+
+**Get posts from followed feeds (with pagination):**
+```bash
+curl -H "Authorization: ApiKey <api_key>" \
+  "http://localhost:8080/api/posts?page=1&limit=10"
+```
+
+**Search posts:**
+```bash
+curl -H "Authorization: ApiKey <api_key>" \
+  "http://localhost:8080/api/posts/search?q=search_term&page=1&limit=10"
+```
+
+#### Bookmarks
+
+**Get user's bookmarks:**
+```bash
+curl -H "Authorization: ApiKey <api_key>" \
+  "http://localhost:8080/api/bookmarks?page=1&limit=10"
+```
+
+**Bookmark a post:**
+```bash
+curl -X POST http://localhost:8080/api/bookmarks \
+  -H "Content-Type: application/json" \
+  -H "Authorization: ApiKey <api_key>" \
+  -d '{"post_id": "post-uuid-here"}'
+```
+
+**Remove bookmark:**
+```bash
+curl -X DELETE http://localhost:8080/api/bookmarks/{post_id} \
+  -H "Authorization: ApiKey <api_key>"
+```
+
+### API Response Format
+
+All API responses use JSON format. Successful responses return the requested data, while errors return:
+
+```json
+{
+  "error": "Error message describing what went wrong"
+}
+```
+
+### Pagination
+
+List endpoints support pagination with query parameters:
+- `page`: Page number (default: 1)
+- `limit`: Items per page (default: 10, max: 100)
+
+Example: `?page=2&limit=20`
+
+### Interactive Documentation
+
+Visit `http://localhost:8080/api/docs` when the server is running to see interactive API documentation with example requests and responses.
+
 ## Project Structure
 
 ```text
@@ -401,6 +574,11 @@ Gator/
 ├── sqlc.yaml                  # SQLC configuration
 ├── .env.example               # Environment variables template
 ├── internal/
+│   ├── api/
+│   │   ├── auth.go            # Authentication middleware and handlers
+│   │   ├── docs.go            # Interactive API documentation
+│   │   ├── handlers.go        # All REST endpoint handlers
+│   │   └── server.go          # HTTP server setup and routing
 │   ├── config/
 │   │   └── config.go          # Configuration management
 │   ├── database/              # Generated database code (SQLC)
@@ -421,7 +599,8 @@ Gator/
         ├── 002_feeds.sql      # Feed table migration
         ├── 003_feed_follows.sql  # Feed follows table migration
         ├── 004_posts.sql      # Posts table migration
-        └── 005_bookmarks.sql  # Bookmarks table migration
+        ├── 005_bookmarks.sql  # Bookmarks table migration
+        └── 006_api_keys.sql   # API keys migration
 ```
 
 ## Development
