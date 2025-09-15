@@ -4,14 +4,31 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"gator/internal/database"
 	"gator/internal/rss"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
+
+// isUniqueViolation checks if an error is a PostgreSQL unique constraint violation
+func isUniqueViolation(err error) bool {
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) {
+		// PostgreSQL error code 23505 is unique_violation
+		return pqErr.Code == "23505"
+	}
+
+	// Also check for common unique constraint error messages as fallback
+	errMsg := strings.ToLower(err.Error())
+	return strings.Contains(errMsg, "unique constraint") ||
+		strings.Contains(errMsg, "duplicate key")
+}
 
 // User handlers
 func (s *Server) handleGetUsers(w http.ResponseWriter, r *http.Request) {
@@ -555,14 +572,16 @@ func (s *Server) handleCreateBookmark(w http.ResponseWriter, r *http.Request) {
 		PostID:    postID,
 	})
 	if err != nil {
+		// Check if it's a unique constraint violation (duplicate bookmark)
+		if isUniqueViolation(err) {
+			s.respondWithError(w, http.StatusConflict, "Post already bookmarked")
+			return
+		}
 		s.respondWithError(w, http.StatusInternalServerError, "Failed to create bookmark")
 		return
 	}
 
-	if bookmark.ID == uuid.Nil {
-		s.respondWithError(w, http.StatusConflict, "Post already bookmarked")
-		return
-	}
+	// Successful creation - bookmark should have a valid ID
 
 	type bookmarkResponse struct {
 		ID        uuid.UUID `json:"id"`
