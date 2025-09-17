@@ -36,6 +36,14 @@ type FeedFollow struct {
 	FeedID    uuid.UUID
 }
 
+type Like struct {
+	ID        uuid.UUID
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	UserID    uuid.UUID
+	PostID    uuid.UUID
+}
+
 type Post struct {
 	ID          uuid.UUID
 	CreatedAt   time.Time
