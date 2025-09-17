@@ -63,6 +63,11 @@ func (s *Server) setupRoutes() {
 	s.router.HandleFunc("GET /api/bookmarks", s.requireAuth(s.handleGetBookmarks))
 	s.router.HandleFunc("POST /api/bookmarks", s.requireAuth(s.handleCreateBookmark))
 	s.router.HandleFunc("DELETE /api/bookmarks/{postId}", s.requireAuth(s.handleDeleteBookmark))
+
+	// Like endpoints
+	s.router.HandleFunc("GET /api/likes", s.requireAuth(s.handleGetLikes))
+	s.router.HandleFunc("POST /api/likes", s.requireAuth(s.handleCreateLike))
+	s.router.HandleFunc("DELETE /api/likes/{postId}", s.requireAuth(s.handleDeleteLike))
 }
 
 // Response helpers

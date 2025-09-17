@@ -630,3 +630,172 @@ func (s *Server) handleDeleteBookmark(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// Like handlers
+func (s *Server) handleGetLikes(w http.ResponseWriter, r *http.Request) {
+	user, err := getUserFromContext(r)
+	if err != nil {
+		s.respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	// Parse pagination parameters
+	page := int32(1)
+	limit := int32(10)
+
+	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = int32(p)
+		}
+	}
+
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
+			limit = int32(l)
+		}
+	}
+
+	offset := (page - 1) * limit
+
+	likes, err := s.db.GetLikesForUser(context.Background(), database.GetLikesForUserParams{
+		UserID: user.ID,
+		Limit:  limit,
+		Offset: offset,
+	})
+	if err != nil {
+		s.respondWithError(w, http.StatusInternalServerError, "Failed to get likes")
+		return
+	}
+
+	type likeResponse struct {
+		PostID      uuid.UUID  `json:"post_id"`
+		Title       string     `json:"title"`
+		URL         string     `json:"url"`
+		Description *string    `json:"description"`
+		PublishedAt *time.Time `json:"published_at"`
+		FeedName    string     `json:"feed_name"`
+		LikedAt     time.Time  `json:"liked_at"`
+	}
+
+	response := make([]likeResponse, len(likes))
+	for i, like := range likes {
+		var description *string
+		if like.Description.Valid {
+			description = &like.Description.String
+		}
+
+		var publishedAt *time.Time
+		if like.PublishedAt.Valid {
+			publishedAt = &like.PublishedAt.Time
+		}
+
+		response[i] = likeResponse{
+			PostID:      like.ID,
+			Title:       like.Title,
+			URL:         like.Url,
+			Description: description,
+			PublishedAt: publishedAt,
+			FeedName:    like.FeedName,
+			LikedAt:     like.LikedAt,
+		}
+	}
+
+	s.respondWithJSON(w, http.StatusOK, response)
+}
+
+type createLikeRequest struct {
+	PostID string `json:"post_id"`
+}
+
+func (s *Server) handleCreateLike(w http.ResponseWriter, r *http.Request) {
+	user, err := getUserFromContext(r)
+	if err != nil {
+		s.respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	var req createLikeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.respondWithError(w, http.StatusBadRequest, "Invalid JSON")
+		return
+	}
+
+	postID, err := uuid.Parse(req.PostID)
+	if err != nil {
+		s.respondWithError(w, http.StatusBadRequest, "Invalid post ID format")
+		return
+	}
+
+	// Check if post exists
+	_, err = s.db.GetPostByID(context.Background(), postID)
+	if err != nil {
+		s.respondWithError(w, http.StatusNotFound, "Post not found")
+		return
+	}
+
+	// Create like
+	like, err := s.db.CreateLike(context.Background(), database.CreateLikeParams{
+		ID:        uuid.New(),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+		UserID:    user.ID,
+		PostID:    postID,
+	})
+	if err != nil {
+		// Check if it's a unique constraint violation (duplicate like)
+		if isUniqueViolation(err) {
+			s.respondWithError(w, http.StatusConflict, "Post already liked")
+			return
+		}
+		s.respondWithError(w, http.StatusInternalServerError, "Failed to create like")
+		return
+	}
+
+	// Successful creation - like should have a valid ID
+	type likeResponse struct {
+		ID        uuid.UUID `json:"id"`
+		PostID    uuid.UUID `json:"post_id"`
+		UserID    uuid.UUID `json:"user_id"`
+		CreatedAt time.Time `json:"created_at"`
+	}
+
+	response := likeResponse{
+		ID:        like.ID,
+		PostID:    like.PostID,
+		UserID:    like.UserID,
+		CreatedAt: like.CreatedAt,
+	}
+
+	s.respondWithJSON(w, http.StatusCreated, response)
+}
+
+func (s *Server) handleDeleteLike(w http.ResponseWriter, r *http.Request) {
+	user, err := getUserFromContext(r)
+	if err != nil {
+		s.respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	postIDStr := r.PathValue("postId")
+	postID, err := uuid.Parse(postIDStr)
+	if err != nil {
+		s.respondWithError(w, http.StatusBadRequest, "Invalid post ID format")
+		return
+	}
+
+	rowsAffected, err := s.db.DeleteLike(context.Background(), database.DeleteLikeParams{
+		UserID: user.ID,
+		PostID: postID,
+	})
+	if err != nil {
+		s.respondWithError(w, http.StatusInternalServerError, "Failed to delete like")
+		return
+	}
+
+	if rowsAffected == 0 {
+		s.respondWithError(w, http.StatusNotFound, "Like not found")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
