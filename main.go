@@ -690,6 +690,152 @@ func handlerBookmarks(s *state, cmd command, user database.User) error {
 	return nil
 }
 
+// handlerLike adds a like to a post for the current user
+func handlerLike(s *state, cmd command, user database.User) error {
+	if len(cmd.args) != 1 {
+		return fmt.Errorf("like requires a post ID argument")
+	}
+
+	postIDStr := cmd.args[0]
+	postID, err := uuid.Parse(postIDStr)
+	if err != nil {
+		return fmt.Errorf("invalid post ID format: %w", err)
+	}
+
+	// Check if post exists
+	_, err = s.db.GetPostByID(context.Background(), postID)
+	if err != nil {
+		return fmt.Errorf("post not found: %w", err)
+	}
+
+	// Check if user already liked this post
+	_, err = s.db.GetLikeByUserAndPost(context.Background(), database.GetLikeByUserAndPostParams{
+		UserID: user.ID,
+		PostID: postID,
+	})
+	if err == nil {
+		return fmt.Errorf("post is already liked")
+	}
+
+	// Create the like
+	like, err := s.db.CreateLike(context.Background(), database.CreateLikeParams{
+		ID:        uuid.New(),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+		UserID:    user.ID,
+		PostID:    postID,
+	})
+	if err != nil {
+		return fmt.Errorf("couldn't create like: %w", err)
+	}
+
+	fmt.Printf("Successfully liked post %s\n", postID)
+	fmt.Printf("Like ID: %s\n", like.ID)
+	fmt.Printf("Liked at: %s\n", like.CreatedAt.Format("2006-01-02 15:04:05"))
+
+	return nil
+}
+
+// handlerUnlike removes a like from a post for the current user
+func handlerUnlike(s *state, cmd command, user database.User) error {
+	if len(cmd.args) != 1 {
+		return fmt.Errorf("unlike requires a post ID argument")
+	}
+
+	postIDStr := cmd.args[0]
+	postID, err := uuid.Parse(postIDStr)
+	if err != nil {
+		return fmt.Errorf("invalid post ID format: %w", err)
+	}
+
+	// Remove the like
+	rowsAffected, err := s.db.DeleteLike(context.Background(), database.DeleteLikeParams{
+		UserID: user.ID,
+		PostID: postID,
+	})
+	if err != nil {
+		return fmt.Errorf("couldn't remove like: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("post is not liked by user")
+	}
+
+	fmt.Printf("Successfully removed like from post %s\n", postID)
+	return nil
+}
+
+// handlerLikes displays all liked posts for the current user with pagination
+func handlerLikes(s *state, cmd command, user database.User) error {
+	const postsPerPage = 5 // Number of likes to show per page
+
+	// Parse page argument (default to 1)
+	page := int32(1)
+	if len(cmd.args) >= 1 {
+		parsedPage, err := parsePageArg(cmd.args[0])
+		if err != nil {
+			return err
+		}
+		page = parsedPage
+	}
+
+	// Get likes for the user with pagination (query for one extra to check if more pages exist)
+	likes, err := s.db.GetLikesForUser(context.Background(), database.GetLikesForUserParams{
+		UserID: user.ID,
+		Limit:  postsPerPage + 1, // Request one extra to check if more pages exist
+		Offset: (page - 1) * postsPerPage,
+	})
+	if err != nil {
+		return fmt.Errorf("couldn't retrieve likes: %w", err)
+	}
+
+	// Check if there are more pages
+	hasMorePages := len(likes) > int(postsPerPage)
+
+	// Trim the extra post if we have one
+	if hasMorePages {
+		likes = likes[:postsPerPage]
+	}
+
+	if len(likes) == 0 {
+		if page == 1 {
+			fmt.Println("No liked posts found. Try liking some posts first!")
+		} else {
+			fmt.Printf("No liked posts found on page %d.\n", page)
+		}
+		return nil
+	}
+
+	fmt.Printf("Liked posts (page %d, showing %d posts):\n\n", page, len(likes))
+	for i, like := range likes {
+		postNumber := int(page-1)*int(postsPerPage) + i + 1
+
+		fmt.Printf("%d. %s\n", postNumber, like.Title)
+		fmt.Printf("   Post ID: %s\n", like.ID)
+		fmt.Printf("   Feed: %s\n", like.FeedName)
+
+		if like.Description.Valid && like.Description.String != "" {
+			fmt.Printf("   %s\n", like.Description.String)
+		}
+
+		if like.PublishedAt.Valid {
+			fmt.Printf("   Published: %s\n", like.PublishedAt.Time.Format("2006-01-02 15:04:05"))
+		}
+		fmt.Printf("   Liked: %s\n", like.LikedAt.Format("2006-01-02 15:04:05"))
+		fmt.Printf("   URL: %s\n\n", like.Url)
+	}
+
+	// Show navigation hints
+	if hasMorePages {
+		fmt.Printf("To see more likes, run: gator likes %d\n", page+1)
+	}
+	if page > 1 {
+		fmt.Printf("To see previous likes, run: gator likes %d\n", page-1)
+	}
+
+	return nil
+}
+
 // handlerServe starts the HTTP API server
 func handlerServe(s *state, cmd command) error {
 	port := "8080" // default port
@@ -927,6 +1073,9 @@ func main() {
 	cmds.register("bookmark", middlewareLoggedIn(handlerBookmark))
 	cmds.register("unbookmark", middlewareLoggedIn(handlerUnbookmark))
 	cmds.register("bookmarks", middlewareLoggedIn(handlerBookmarks))
+	cmds.register("like", middlewareLoggedIn(handlerLike))
+	cmds.register("unlike", middlewareLoggedIn(handlerUnlike))
+	cmds.register("likes", middlewareLoggedIn(handlerLikes))
 
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "Error: not enough arguments. Usage: gator <command> [args...]")
