@@ -13,6 +13,7 @@ Gator is a command-line application and HTTP API server built in Go that provide
 - **Pagination**: Browse posts with user-friendly page-based navigation (5 posts per page)
 - **Search Functionality**: Fuzzy search through post titles and descriptions
 - **Bookmarking**: Save and manage favorite posts for later reading
+- **Liking**: Like posts to show appreciation (separate from bookmarks)
 - **User Management**: Register, login, and manage multiple users
 - **PostgreSQL Integration**: Persistent data storage with migrations
 - **CLI Interface**: Easy-to-use command-line interface with comprehensive commands
@@ -259,6 +260,34 @@ Notes:
 - Bookmarks are sorted by bookmark creation date (newest first)
 - Each bookmark shows when it was bookmarked and the original publication date
 - Pagination works the same as browse and search commands (5 posts per page)
+
+**Like a post to show appreciation:**
+
+```bash
+gator like <post_id>
+```
+
+**Remove a like from a post:**
+
+```bash
+gator unlike <post_id>
+```
+
+**View all your liked posts:**
+
+```bash
+gator likes [page]
+```
+
+- `gator likes` - Shows page 1 of your liked posts
+- `gator likes 2` - Shows page 2 of liked posts
+
+Notes:
+
+- Likes are separate from bookmarks - you can like without bookmarking and vice versa
+- Liked posts are sorted by like creation date (newest first)
+- Each liked post shows when you liked it and the original publication date
+- Pagination works the same as other commands (5 posts per page)
 
 ### Examples
 
@@ -540,6 +569,28 @@ curl -X POST http://localhost:8080/api/bookmarks \
 **Remove bookmark:**
 ```bash
 curl -X DELETE http://localhost:8080/api/bookmarks/{post_id} \
+  -H "Authorization: ApiKey <api_key>"
+```
+
+#### Likes
+
+**Get user's liked posts:**
+```bash
+curl -H "Authorization: ApiKey <api_key>" \
+  "http://localhost:8080/api/likes?page=1&limit=10"
+```
+
+**Like a post:**
+```bash
+curl -X POST http://localhost:8080/api/likes \
+  -H "Content-Type: application/json" \
+  -H "Authorization: ApiKey <api_key>" \
+  -d '{"post_id": "post-uuid-here"}'
+```
+
+**Remove like:**
+```bash
+curl -X DELETE http://localhost:8080/api/likes/{post_id} \
   -H "Authorization: ApiKey <api_key>"
 ```
 
