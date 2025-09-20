@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -868,83 +867,8 @@ func parsePageArg(s string) (int32, error) {
 	return int32(i), nil
 }
 
-// PostView is a lightweight view of a post used by rendering functions and tests.
-type PostView struct {
-	ID          uuid.UUID
-	Title       string
-	Url         string
-	FeedName    string
-	Description sql.NullString
-	PublishedAt sql.NullTime
-}
 
-// convert functions
-func toPostViewsFromGet(rows []database.GetPostsForUserRow) []PostView {
-	out := make([]PostView, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, PostView{
-			ID:          r.ID,
-			Title:       r.Title,
-			Url:         r.Url,
-			FeedName:    r.FeedName,
-			Description: r.Description,
-			PublishedAt: r.PublishedAt,
-		})
-	}
-	return out
-}
 
-func toPostViewsFromSearch(rows []database.SearchPostsForUserRow) []PostView {
-	out := make([]PostView, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, PostView{
-			ID:          r.ID,
-			Title:       r.Title,
-			Url:         r.Url,
-			FeedName:    r.FeedName,
-			Description: r.Description,
-			PublishedAt: r.PublishedAt,
-		})
-	}
-	return out
-}
-
-// renderPosts renders a page of posts into a string, returning the output.
-func renderPosts(views []PostView, page int32, postsPerPage int) string {
-	offset := (page - 1) * int32(postsPerPage)
-	hasMore := false
-	if len(views) > postsPerPage {
-		hasMore = true
-		views = views[:postsPerPage]
-	}
-
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf("Posts (page %d, showing %d posts):\n\n", page, len(views)))
-	for i, post := range views {
-		postNumber := offset + int32(i) + 1
-		b.WriteString(fmt.Sprintf("%d. %s\n", postNumber, post.Title))
-		b.WriteString(fmt.Sprintf("   Post ID: %s\n", post.ID))
-		b.WriteString(fmt.Sprintf("   Feed: %s\n", post.FeedName))
-		if post.Description.Valid && post.Description.String != "" {
-			desc := post.Description.String
-			if len(desc) > 200 {
-				desc = desc[:200] + "..."
-			}
-			b.WriteString(fmt.Sprintf("   %s\n", desc))
-		}
-		if post.PublishedAt.Valid {
-			b.WriteString(fmt.Sprintf("   Published: %s\n", post.PublishedAt.Time.Format("2006-01-02 15:04:05")))
-		}
-		b.WriteString(fmt.Sprintf("   URL: %s\n\n", post.Url))
-	}
-	if hasMore {
-		b.WriteString(fmt.Sprintf("To see more posts, run: gator browse %d\n", page+1))
-	}
-	if page > 1 {
-		b.WriteString(fmt.Sprintf("To see previous posts, run: gator browse %d\n", page-1))
-	}
-	return b.String()
-}
 
 // AggregationConfig holds configuration for concurrent feed aggregation
 type AggregationConfig struct {
