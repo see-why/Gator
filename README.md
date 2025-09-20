@@ -431,6 +431,40 @@ gator bookmarks
 gator unbookmark 550e8400-e29b-41d4-a716-446655440000
 # Output:
 # Successfully removed bookmark for post 550e8400-e29b-41d4-a716-446655440000
+
+# Like posts to show appreciation (separate from bookmarking)
+gator like 550e8400-e29b-41d4-a716-446655440000
+# Output:
+# Successfully liked post 550e8400-e29b-41d4-a716-446655440000
+# Like ID: 8db8c921-9fbe-33g3-a1d6-22e15ge541f0
+# Liked at: 2025-08-22 14:35:00
+
+# Like another interesting post
+gator like 6ba7b810-9dad-11d1-80b4-00c04fd430c8
+
+# View all your liked posts
+gator likes
+# Output:
+# Liked posts (page 1, showing 2 posts):
+#
+# 1. Another Great Article
+#    Post ID: 6ba7b810-9dad-11d1-80b4-00c04fd430c8
+#    Feed: Science Daily
+#    Published: 2025-08-22 09:15:00
+#    Liked: 2025-08-22 14:36:00
+#    URL: https://example.com/science-article
+#
+# 2. Interesting AI Article
+#    Post ID: 550e8400-e29b-41d4-a716-446655440000
+#    Feed: Tech News
+#    Published: 2025-08-22 10:30:00
+#    Liked: 2025-08-22 14:35:00
+#    URL: https://example.com/ai-article
+
+# Unlike a post if you change your mind
+gator unlike 550e8400-e29b-41d4-a716-446655440000
+# Output:
+# Successfully removed like from post 550e8400-e29b-41d4-a716-446655440000
 ```
 
 ## HTTP API
