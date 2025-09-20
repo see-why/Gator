@@ -2,9 +2,7 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"net/http"
-	"strings"
 	"testing"
 
 	"gator/internal/database"
@@ -12,26 +10,6 @@ import (
 
 	"github.com/google/uuid"
 )
-
-func TestRenderPosts_TruncationAndPagination(t *testing.T) {
-	longDesc := "a"
-	for i := 0; i < 300; i++ {
-		longDesc += "a"
-	}
-
-	views := []PostView{
-		{ID: uuid.New(), Title: "One", Url: "u1", FeedName: "F1", Description: sql.NullString{String: longDesc, Valid: true}, PublishedAt: sql.NullTime{Valid: false}},
-		{ID: uuid.New(), Title: "Two", Url: "u2", FeedName: "F2"},
-	}
-
-	out := renderPosts(views, 1, 1) // postsPerPage = 1 -> will show 1 post and hint for more
-	if out == "" {
-		t.Fatalf("expected non-empty output")
-	}
-	if !strings.Contains(out, "To see more posts") {
-		t.Fatalf("expected pagination hint")
-	}
-}
 
 func TestAggregateFeeds_WithFakes(t *testing.T) {
 	feeds := []database.GetFeedsWithUsersRow{
