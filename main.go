@@ -9,6 +9,7 @@ import (
 	"gator/internal/config"
 	"gator/internal/database"
 	"gator/internal/rss"
+	"gator/internal/tui"
 	"net/http"
 	"os"
 	"strconv"
@@ -855,6 +856,11 @@ func handlerServe(s *state, cmd command) error {
 	return server.Start()
 }
 
+// handlerTUI starts the Terminal User Interface for browsing posts
+func handlerTUI(s *state, cmd command, user database.User) error {
+	return tui.RunTUI(s.db, user.ID)
+}
+
 // parsePageArg parses a page argument string and returns a validated int32 page number.
 func parsePageArg(s string) (int32, error) {
 	i, err := strconv.Atoi(s)
@@ -984,6 +990,7 @@ func main() {
 	cmds.register("users", handlerUsers)
 	cmds.register("agg", handlerAgg)
 	cmds.register("serve", handlerServe)
+	cmds.register("tui", middlewareLoggedIn(handlerTUI))
 	cmds.register("addfeed", middlewareLoggedIn(handlerAddFeed))
 	cmds.register("feeds", handlerFeeds)
 	cmds.register("follow", middlewareLoggedIn(handlerFollow))
