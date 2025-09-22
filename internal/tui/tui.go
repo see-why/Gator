@@ -227,7 +227,7 @@ func (m Model) renderPostList() string {
 
 	headerText := fmt.Sprintf("📰 Gator Posts - Page %d", m.currentPage)
 	if m.isSearching && m.searchQuery != "" {
-		headerText = fmt.Sprintf("� Search: \"%s\" - Page %d", m.searchQuery, m.currentPage)
+		headerText = fmt.Sprintf("🔍 Search: \"%s\" - Page %d", m.searchQuery, m.currentPage)
 	}
 
 	b.WriteString(headerStyle.Render(headerText))
