@@ -14,6 +14,7 @@ Gator is a command-line application and HTTP API server built in Go that provide
 - **Search Functionality**: Fuzzy search through post titles and descriptions
 - **Bookmarking**: Save and manage favorite posts for later reading
 - **Liking**: Like posts to show appreciation (separate from bookmarks)
+- **Interactive TUI**: Beautiful terminal user interface for browsing and reading posts
 - **User Management**: Register, login, and manage multiple users
 - **PostgreSQL Integration**: Persistent data storage with migrations
 - **CLI Interface**: Easy-to-use command-line interface with comprehensive commands
@@ -147,6 +148,20 @@ gator reset
 ```
 
 Deletes all users from the database.
+
+**Interactive Terminal UI for browsing posts:**
+
+```bash
+gator tui
+```
+
+Launches an interactive terminal interface for browsing and reading posts with the following features:
+- Navigate posts with arrow keys or vim-style navigation (j/k)
+- View detailed post information with Enter
+- Open posts in browser with 'o' key
+- Search posts with '/' key
+- Browse between pages with h/l or left/right arrows
+- Clear search results with 'c' key
 
 **Start HTTP API server:**
 
@@ -465,6 +480,16 @@ gator likes
 gator unlike 550e8400-e29b-41d4-a716-446655440000
 # Output:
 # Successfully removed like from post 550e8400-e29b-41d4-a716-446655440000
+
+# Launch the interactive TUI for a better browsing experience
+gator tui
+# Opens an interactive terminal interface where you can:
+# - Navigate with arrow keys or j/k
+# - Press Enter to view post details
+# - Press 'o' to open posts in your browser
+# - Press '/' to search through posts
+# - Press 'c' to clear search and browse all posts
+# - Use h/l or arrow keys to navigate between pages
 ```
 
 ## HTTP API
